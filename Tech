@@ -1,0 +1,185 @@
+Backend : Node.js + Express, avec PostgreSQL pour les données.
+Temps réel : SSE (Server-Sent Events) pour pousser les nouveaux événements dans le fil.
+Modèle de données : des événements normalisés. Chaque app (Slack, Gmail, etc.) est transformée dans un même format avant d’arriver dans le fil.
+Frontend : React + Vite, en PWA.
+Mobile : Capacitor (Android et iOS).
+Desktop : Tauri.
+Voix : micro → Whisper via Groq → IA → lecture vocale.
+
+[App tierce: Slack, Gmail, Telegram, Stripe, ...]
+                │  (Webhook OU Polling)
+                ▼
+            API Node.js + Express (TypeScript)
+                │  (Vérification + Enqueue)
+                ▼
+            File BullMQ + Redis (Workers en arrière-plan)
+                │  (Normalisation + Dédoublonnage + Sauvegarde)
+                ▼
+            PostgreSQL (événements normalisés)
+                │  (Diffusion)
+                ▼
+            SSE (Server-Sent Events)
+                │
+                ▼
+        Frontend React + Vite (PWA) → Capacitor (Mobile) / Tauri (Desktop)
+
+        L'utilisateur choisit une app depuis ton onglet "Connecteurs". Selon le cas :
+Méthode	Quand l'utiliser
+OAuth2	Autorisation via compte utilisateur
+Bot Token	Token généré depuis l'app tierce
+Webhook	L'app envoie directement des événements vers ton API
+IMAP	Pas de webhook, connexion à une boîte mail
+Les tokens obtenus sont immédiatement chiffrés avec AES-256-GCM avant d'être stockés en base.
+Étape 2 : Ingestion des événements
+On distingue deux modes, avec pour règle : répondre vite, traiter en arrière-plan.
+Mode	Fonctionnement	Remarques
+Webhook (temps réel)	POST /webhooks/:source reçoit l'événement	Vérification signature HMAC, idempotence, push dans BullMQ, puis renvoi 202 Accepted immédiatement. Aucun traitement lourd avant cette réponse.
+Polling (arrière-plan)	Worker BullMQ tourne à intervalle régulier	Pour les APIs sans webhook (IMAP, etc.). Récupère uniquement ce qui est nouveau grâce à un curseur (last_sync_at, historyId, ...).
+Étape 3 : Normalisation & dédoublonnage
+C'est le cœur du produit.
+1. Le worker récupère le job depuis la file.
+2. Le connecteur concerné prend les données brutes et utilise sa méthode normalize().
+3. Transformation vers un format unique : Slack, Telegram, IMAP etc. donnent tous le même objet pour la table events.
+4. Dédoublonnage : génération d'un dedup_key (${source}:${externalId}) pour éviter les doublons.
+5. Sauvegarde : insertion dans PostgreSQL si inexistant.
+Étape 4 : Affichage en temps réel dans le fil
+Une fois l'événement enregistré, il est diffusé via SSE.
+- Côté backend : GET /api/stream maintient une connexion persistante par utilisateur authentifié (géré par server/sse/).
+- Côté frontend : EventSource écoute le flux et ajoute l'événement en haut du fil sans rechargement.
+- Natif : fonctionne avec Capacitor/Tauri, à condition d'avoir un CORS strict et les bons cookies/headers.
+Étape 5 : Agir & utiliser la voix
+Depuis le fil unifié, on peut agir sans ouvrir l'app source.
+Fonctionnalité	Détail
+Agir depuis le fil	Via reply() du connecteur (répondre, marquer comme fait, etc.).
+Voix-first	MediaRecorder → API → Groq Whisper (transcription) → contexte du fil envoyé au LLM (Groq/Gemini) → réponse texte → speechSynthesis.
+Digest vocal	Job planifié (node-cron) pour générer un résumé vocal des événements non lus des dernières 24h.
+Priorisation	Le bot peut mettre en avant ce qui est urgent selon le contexte.
+3. Structure de dossiers
+On évite les doublons. Un seul dossier pour les types partagés.
+fil-unifie/
+├── shared/           # Types TypeScript partagés (événements, connecteurs) - UNIQUE
+├── client/           # React + Vite + PWA (fil, connecteurs, voix)
+└── server/
+    ├── config/       # Variables d'env + config (TOKEN_ENC_KEY, DB, Redis, etc.)
+    ├── crypto/       # Chiffrement AES-256-GCM des tokens OAuth
+    ├── db/           # Migrations, schéma, connexion Postgres/SQLite
+    ├── connectors/   # Un module par app + base.connector + registry + interface
+    ├── webhooks/     # Réception, vérif signature HMAC, idempotence, enqueue vers BullMQ
+    ├── queues/       # Définition des files (noms, options, retry, backoff, DLQ) + workers dans queues/workers/ ou directement
+    ├── sse/          # Gestion du flux temps réel (connections, broadcast)
+    ├── auth/         # Authentification (sessions httpOnly)
+    ├── routes/       # Routes API Express
+    └── utils/        # Helpers communs (déduplication, rate-limit, etc.)
+Remarques sur la structure :
+- shared/ uniquement. Pas de packages/. Si un jour tu passes en monorepo avec workspaces npm, tu peux migrer vers packages/shared, mais pour l'instant ça crée de la duplication inutile.
+- queues/ et jobs/ fusionnés. Soit queues/ avec queues/workers/ dedans, soit simplement queues/ qui contient à la fois la config des files et la logique des workers. L'objectif est d'éviter deux dossiers qui font la même chose.
+- server/db/ : obligatoire pour garder tes migrations et ton schéma Postgres des événements clairs.
+- server/sse/ : à isoler pour gérer proprement les connexions persistantes et le broadcast.
+- server/config/ : centralise tout, notamment TOKEN_ENC_KEY. Jamais dans le dépôt.
+4. Points clés à ne JAMAIS oublier
+Point	Pourquoi
+Répondre vite aux webhooks	Stripe/Slack/Telegram coupent si pas de réponse rapide. Vérif + enqueue + 202 Accepted.
+Interface commune pour les connecteurs	Chaque connecteur implémente connect(), poll(), handleWebhook(), reply(), normalize(). Ajouter une app = 1 fichier + enregistrement dans le ConnectorRegistry.
+Chiffrement des tokens	AES-256-GCM, ciphertext/iv/authTag/keyVersion, clé dans .env (puis gestionnaire de secrets). Rotation de clé à prévoir.
+TypeScript + Zod	Le format normalisé circule partout. Zod valide le retour de normalize() avant insertion en base.
+BullMQ + Redis	Polling, retry, backoff exponentiel, Dead Letter Queue. Indispensable pour la fiabilité.
+SSE sécurisé	Auth obligatoire, CORS strict (capacitor://localhost, tauri://localhost, http://localhost:5173).
+Idempotence	dedup_key + check côté webhook pour contrer les renvois automatiques.
+5. Ordre à suivre pour démarrer
+On reste minimaliste. Pas besoin de tout monter d'un coup.
+Ordre	Tâche
+0. Socle	Setup TypeScript, Express, config (server/config/), .env.example
+1. Sécurité & données	server/db/ (migrations + schéma), chiffrement (server/crypto/) AES-256-GCM, users/connections chiffrés
+2. Système connecteurs	shared/types/connector.ts, connectors/base.connector.ts, connectors/registry.ts
+3. Webhooks + file	server/webhooks/, server/queues/ (config BullMQ + workers), vérif signature + 202 Accepted
+4. Premiers connecteurs (MVP)	Webhook générique → IMAP (mail entrant) → Telegram Bot
+5. Fil unifié + SSE	Table events normalisée, server/sse/, GET /api/stream, affichage React dans client/
+6. Voix basique	MediaRecorder + Groq Whisper + speechSynthesis
+7. Emballage	PWA → Capacitor → Tauri
+Règle d'or : "Répondre vite, traiter en arrière-plan." 
+Pour un premier passage, tu peux même te limiter à connectors/, webhooks/, crypto/, db/ et client/. Ajoute queues/ au moment où tu as vraiment besoin du polling ou du traitement asynchrone lourd. Ça évite de sur-complexifier dès le départ, tout en restant sur la bonne logique.
+▣  Build · Big Pickle · 2m 4s
+doncon reste sur ce que tu as dit au début c'est ça?
+Oui, on reste sur le fond de ce qu'on a dit au début. Ce qu'on vient d'ajouter ce sont juste des corrections d'organisation, pas un changement d'architecture. 
+1. Ce qu'on garde tel quel
+- Fil unifié avec des événements normalisés
+- SSE pour le temps réel
+- Connecteurs modulaires avec une interface commune
+- Voix-first (MediaRecorder → Groq Whisper → IA → speechSynthesis)
+- Multi-cible (React + Vite PWA, Capacitor et Tauri)
+- Webhooks : vérification + 202 Accepted + traitement en arrière-plan
+- Chiffrement AES-256-GCM des tokens OAuth
+- TypeScript + Zod pour sécuriser le format normalisé
+2. Ce qu'on corrige
+Élément	Décision
+shared/ vs packages/	Garder uniquement shared/
+queues/ vs jobs/	Les fusionner
+Dossiers manquants	Ajouter server/db/, server/sse/ et server/config/
+BullMQ + Redis	Pas obligatoire pour le premier jour
+3. Structure à viser
+fil-unifie/
+├── shared/           # Types TypeScript partagés (événements, connecteurs) - UNIQUE
+├── client/           # React + Vite + PWA (fil, connecteurs, voix)
+└── server/
+    ├── config/       # Variables d'env + config (TOKEN_ENC_KEY, DB, Redis...)
+    ├── crypto/       # Chiffrement AES-256-GCM des tokens
+    ├── db/           # Migrations, schéma, connexion Postgres/SQLite
+    ├── connectors/   # Un module par app + base.connector + registry
+    ├── webhooks/     # Réception, vérif signature HMAC, idempotence, enqueue
+    ├── queues/       # Files + workers (fusionné, avec workers/ si besoin)
+    ├── sse/          # Flux temps réel (connexions, broadcast)
+    ├── auth/         # Authentification (sessions httpOnly)
+    ├── routes/       # Routes API Express
+    └── utils/        # Helpers (déduplication, rate-limit...)
+4. Ordre minimal pour démarrer
+Pas besoin de tout remplir. Pour ton premier passage, reste au strict minimum : 
+Ordre	Tâche
+1	server/config/ + .env.example
+2	server/db/ + server/crypto/
+3	shared/ + server/connectors/
+4	server/webhooks/ + server/sse/
+5	server/auth/ + client/
+6	server/queues/ (uniquement si besoin)
+En résumé : Oui, on reste sur le workflow du début. On affine juste l'organisation des dossiers pour éviter les doublons et rester plus pragmatique pour le MVP.
+▣  Build · Big Pickle · 1m 1s
+d'accord
+D'accord. On reste sur le fond du début, juste avec cette organisation affinée.
+Ce qu'on garde
+- Fil unifié avec des événements normalisés
+- SSE pour le temps réel
+- Connecteurs modulaires avec une interface commune
+- Voix-first (MediaRecorder → Groq Whisper → IA → speechSynthesis)
+- Multi-cible (React + Vite PWA, Capacitor, Tauri)
+- Webhooks : vérification + 202 Accepted + traitement en arrière-plan
+- Chiffrement AES-256-GCM des tokens
+- TypeScript + Zod pour sécuriser le format normalisé
+Ce qu'on corrige
+Élément	Décision
+shared/ vs packages/	Uniquement shared/
+queues/ vs jobs/	Fusionner dans queues/
+Dossiers manquants	Ajouter server/config/, server/db/, server/sse/
+BullMQ + Redis	Uniquement si besoin
+Structure à viser
+fil-unifie/
+├── shared/           # Types TypeScript partagés (événements, connecteurs) - UNIQUE
+├── client/           # React + Vite + PWA (fil, connecteurs, voix)
+└── server/
+    ├── config/       # Variables d'env + config (TOKEN_ENC_KEY, DB, Redis...)
+    ├── crypto/       # Chiffrement AES-256-GCM des tokens
+    ├── db/           # Migrations, schéma, connexion Postgres/SQLite
+    ├── connectors/   # Un module par app + base.connector + registry
+    ├── webhooks/     # Réception, vérif signature HMAC, idempotence, enqueue
+    ├── sse/          # Flux temps réel (connexions, broadcast)
+    ├── auth/         # Authentification (sessions httpOnly)
+    ├── routes/       # Routes API Express
+    ├── utils/        # Helpers (déduplication, rate-limit...)
+    └── queues/       # Files + workers (uniquement si nécessaire)
+Ordre minimal pour démarrer
+Ordre	Tâche	Objectif
+1	server/config/ + .env.example	Poser les bases sécurisées
+2	server/db/ + server/crypto/	Schéma + chiffrement AES-256-GCM des tokens
+3	shared/ + server/connectors/	Interface commune + registre des connecteurs
+4	server/webhooks/ + server/sse/	Ingérer (webhook + 202 Accepted) et diffuser en temps réel
+5	server/auth/ + client/	Authentification + premier affichage du fil unifié
+6	server/queues/	Ajouter uniquement si on passe au polling ou à du traitement lourd
+Règle d'or : "Répondre vite, traiter en arrière-plan."
