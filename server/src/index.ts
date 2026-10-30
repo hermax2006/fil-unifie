@@ -2,6 +2,9 @@ import express from 'express';
 import { config } from './config/index.js';
 import { apiRouter } from './routes/api.js';
 import { webhooksRouter } from './webhooks/router.js';
+import { migrate } from './db/client.js';
+
+migrate();
 
 const app = express();
 

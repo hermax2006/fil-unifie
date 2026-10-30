@@ -1,7 +1,7 @@
 const isProd = process.env.NODE_ENV === 'production';
 
 export const config = {
-  port: Number(process.env.PORT ?? 3001),
+  port: Number(process.env.PORT ?? 4000),
   isProd,
 };
 

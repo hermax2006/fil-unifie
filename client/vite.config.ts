@@ -6,8 +6,8 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      '/api': 'http://localhost:3001',
-      '/webhooks': 'http://localhost:3001',
+      '/api': 'http://localhost:4000',
+      '/webhooks': 'http://localhost:4000',
     },
   },
 });
