@@ -1,0 +1,143 @@
+# Pipeline de construction - Fil Unifié
+
+Ce document décrit **étape par étape** ce qu'il reste à construire, comment s'y prendre et comment garder le projet extensible pour ajouter de nouveaux connecteurs/logiques sans tout casser.
+
+## Objectif
+Construire un "fil unifié" qui agrège notifications/messages depuis plusieurs applications (via webhooks/polling) dans une seule interface, avec une base solide, modulaire et évolutive.
+
+## État actuel
+- [x] Monorepo (client/server/shared)
+- [x] Serveur Express + routes api/webhooks + SSE
+- [x] Connecteurs modulaires (base, registry, webhook générique, telegram, slack)
+- [x] File/queue en mémoire (setImmediate)
+- [x] Stockage SQLite (persiste)
+- [x] Client React + Vite avec Feed/Connectors
+- [x] Types partagés (@fil/shared)
+- [x] Crypto AES-256-GCM (tokens)
+- [x] Vérification signatures webhooks
+
+## Pipeline étape par étape
+
+### Étape 1: Modélisation & base de données (priorité haute)
+Objectif: rendre le schéma plus complet pour gérer comptes, connexions, événements.
+
+| Tâche | Fichier(s) | Détails |
+|---|---|---|
+| **1.1 Étendre le schéma** | `server/src/db/schema.sql` | Ajouter `accounts(id, user_id, name, created_at)`, `connector_connections(id, account_id, connector_id, config_json, encrypted_tokens_json, active, created_at, updated_at)`, `webhook_endpoints(id, account_id, connector_id, secret_hash, path_token, created_at)`. |
+| **1.2 Migrations** | `server/src/db/migrate.ts` | Créer un système de migrations simple (version table) pour éviter de casser si on modifie le schéma. |
+| **1.3 Repository pattern** | `server/src/db/repos/` | Créer `events.repo.ts`, `accounts.repo.ts`, `connections.repo.ts` pour isoler SQL du reste du code. |
+| **1.4 Types DB** | `shared/src/db.ts` (nouveau) ou `server/src/db/types.ts` | Types pour les lignes SQL (row types) distincts des types API. |
+
+**Critère de validation:** Migrations s'exécutent au démarrage, aucun changement dans `webhooks/router.ts` nécessaire.
+
+### Étape 2: Authentification & multi-comptes (priorité haute)
+Objectif: permettre d'avoir plusieurs comptes/connecteurs avec un minimum d'auth.
+
+| Tâche | Fichier(s) | Détails |
+|---|---|---|
+| **2.1 Sessions** | `server/src/auth/session.ts`, `server/src/auth/middleware.ts` | Utiliser des sessions httpOnly (express-session) ou JWT httpOnly. Pour MVP simple, sessions en mémoire/SQLite. |
+| **2.2 Routes auth** | `server/src/routes/auth.ts` | `POST /auth/register`, `POST /auth/login`, `POST /auth/logout`, `GET /auth/me`. |
+| **2.3 Lier comptes** | `server/src/routes/accounts.ts` | Créer/sélectionner un compte utilisateur, lier un connecteur. |
+| **2.4 Protéger routes** | `server/src/routes/api.ts` | Protéger `/events`, `/connectors` si nécessaire, garder `/health` public. |
+
+**Critère de validation:** Un utilisateur peut se connecter et voir uniquement ses événements.
+
+### Étape 3: Gestion des connecteurs & configuration (priorité haute)
+Objectif: rendre l'ajout de connecteurs vraiment extensible.
+
+| Tâche | Fichier(s) | Détails |
+|tag
+|---|---|---|
+| **3.1 Interface enrichie** | `server/src/connectors/base.connector.ts` | Ajouter `connect()`, `poll()`, `reply()`, `getAuthUrl()`, `exchangeCode()`. Garder les méthodes existantes pour rétrocompatibilité. |
+| **3.1.1 Validation config** | `server/src/connectors/schema.ts` | Utiliser Zod pour valini connecter les configs en fonction de chaque connecteur. |
+| **3.2 Registre amélioré** | `server/src/connectors/registry.ts` | Garder le registre central, ajouter des filtations by status/access, permettre chargement dynamique. |
+| **3.3 Gestion des connexions** | `server/src/routes/connections.ts` | Créer/supprimer/activer désactiver une connexion, stocker config & tokens chiffrés via `crypto/tokens.ts`. |
+| **3.4 Secrets webhooks** | `server/src/webhooks/secret-manager.ts` | Générer des secrets aléatoires par endpoint webhook, hasher (SHA-256) en base, vérifier avec timingSafeEqual. |
+
+**Critère de validation:** Ajouter un nouveau connecteur devrait prendre < 30 min (créer un fichier dans `connecteurs/`, l'ajouter au registre). 
+
+### Étape 4: Queue & workers (priorité moyenne-haute)
+Objectif: préparer au-delà du `setImmediate` (polling, retries, DLQ).
+
+| Tâche | Fichier(s) | Détails |
+|---|---|---|
+| **4.1 Abstraction queue** | `server/src/queues/queue.interface.ts` | Interface IQueue avec `add()`, `process()`. Permet de basculer entre mémoire et BullMQ sans changer le code. |
+| **4.2 Implémentation mémoire** | `server/src/queues/memory.queue.ts` | Refactoriser l'actuel `enqueueEvent()` vers cette interface. |
+| **4.3 BullMQ (optionnel)** | `server/src/queues/bullmq.queue.ts` | Si `REDIS_URL` présent, utiliser BullMQ. Sinon mémoire. Ajouter `server/src/queues/worker.ts`. |
+| **4.4 Jobs types** | `server/src/queues/jobs/` | `process-event.ts`, `poll-connector.ts`, `sync-account.ts`. Séparer clairement. |
+
+**Critère de validation:** Si Redis absent, tout fonctionne comme aujourd'hui. Si Redis présent, les jobs passent par BullMQ.
+
+### Étape 5: Polling + synchronisation (priorité moyenne)
+Objectif: connecter des apps sans webhook (IMAP, RSS, etc.).
+
+| Tâche | Fichier(s) | Détails |
+|---|---|---|
+| **5.1 Scheduler** | `server/src/scheduler/index.ts` | Cron simple (node-cron) ou BullMQ repeatable jobs. |
+| **5.2 IMAP connector** | `server/src/connectors/imap.connector.ts` | Polling IMAP (imap-simple/node-imap), normaliser en `UnifiedEvent`. Stocker `last_uid` par connexion. |
+| **5.3 RSS connector** | `server/src/connectors/rss.connector.ts` | Parser RSS/Atom, déduplication par `externalId` (guid/link). |
+| **5.4 Deduplication** | `server/src/utils/dedup.ts` | Créer `dedup_key` basé sur `(connector, accountId, externalId)` ou hash du contenu. Empêcher doublons. |
+
+**Critère de validation:** Un connecteur en polling ne crée pas de doublons entre deux exécutions.
+
+### Étape 6: Voice/IA & accessibilité (priorité basse-moyenne)
+Objectif: ajout vocal comme prévu dans les objectifs.
+
+| Tâche | Fichier(s) | Détails |
+|---|---|---|
+| **6.1 Voice widget** | `client/src/voice/VoiceWidget.tsx`, `client/src/voice/hooks.ts` | Bouton microphone, enregistrement, transcription. |
+| **6.2 Transcription** | `server/src/voice/transcribe.ts` | Groq Whisper (recommandé) ou Gemini. Fallback local si possible. |
+| **6.3 TTS** | `client/src/voice/tts.ts` | `speechSynthesis` côté client, options voix. |
+| **6.4 Actions vocales** | `server/src/voice/actions.ts` | Demander à LLM de mapper commande vocale vers action (lire, répondre, marquer lu). |
+
+**Critère de validation:** Enregistrer audio, obtenir transcription, pouvoir lire un événement à voix haute.
+
+### Étape 7: Client & UX (priorité moyenne)
+Objectif: rendre l'utilisation fluide.
+
+| Tâche | Fichier(s) | Détails |
+|---|---|---|
+| **7.1 Layout amélioré** | `client/src/App.tsx`, `client/src/index.css` | Barre de recherche/filtre, onglets (Fil / Applications / Réglages). |
+| **7.2 Feed amélioré** | `client/src/components/Feed.tsx`, `client/src/components/EventItem.tsx` | Composant séparé pour un événement, tri, filtre par connecteur/kind, "marquer lu". |
+| **7.3 Gestion connexions** | `client/src/components/Connections.tsx` | Ajouter/modifier/lier un connecteur, afficher URL webhook, configurer secret. |
+| **7ep.7.4 Temps réel** | Déjà fait via SSE | Vérifier reconnexion SSE en cas de déconnexion, gérer erreurs. |
+
+**Critère de validation:** L'utilisateur peut facilement configurer un nouveau webhook générique depuis l'UI.
+
+### Étape 8: Sécurité, tests & déploiement (priorité haute pour la production)
+Objectif: renforcer sécurité et faciliter déploiement.
+
+| Tâche | Fichier(s) | Détails |
+|---|---|---|
+| **8.1 Sécurité webhooks** | Déjà fait partiellement | Améliorer secret-manager, vérifier timingSafeEqual partout, interdire fallback dev-secret en production. |
+| **8.2 CORS** | `server/src/app.ts` (nouveau) ou `server/src/index.ts` | Configurer strict CORS selon `ALLOWED_ORIGINS` (.env). Déjà prévu dans `.env.example. |
+| **8.3 Validation** | `server/src/utils/validate.ts` | Middleware Zod pour valider body/params/query. |
+| **8.4 Tests unitaires** | `server/tests/`, `shared/tests/ | But simple (connecteurs, normalize, crypto). Vitest. |
+| **8.5 Docker & déploiement** | `docker-compose.yml, `Dockerfile` | Préparer pour prod (Postgres + Redis + server + client). |
+
+**Critère de validation:** En prod, aucun secret n'apparaît dans les logs, signatures sont vérifiées, CORS strict.
+
+## Règles d'évolutivité (à respecter)
+Pour ajouter **n'importe quel connecteur** sans casser l'existant:
+
+1. **Créer un fichier** dans `server/src/connectors/<id>.connector.ts` qui étend `BaseConnector`.
+2. **Implémenter** `info` + `verifyWebhook()` (si webhook) + `normalize()`. Ajouter `connect()/poll()/reply()` si nécessaire.
+3. **Ajouter au registre** `server/src/connectors/registry.ts`.
+4. **Mettre à jour types** si nouveau `EventKind` nécessaire dans `shared/src/index.ts`.
+5. **Pas toucher** aux routes `webhooks/router.ts`, `api/routes.ts`, `queues/`, `sse/` - ils doivent rester génériques.
+
+Le principe: **"interface partagée + registre central"**. 
+
+## Plan immédiat (ce qu'on doit construire maintenant)
+Pour avancer concrètement dans l'immédiat:
+
+| Ordre | Tâche | Pourquoi |
+|---|---|---|---|
+| **A)** | Étendre schéma SQLite + repo pattern (Étape 1) | Éviter de devoir tout réécrire plus tard pour multi-comptes. |
+| **B)** | Améliorer UI Connections (copier URL, configurer secret) + Feed (filtres) (Étape 7) | Rendre le testable et utilisable sans Postman/curl. |
+| **C)** | Créer secret-manager pour webhooks (Étape 3.4) | Mieux sécuriser et faciliter ajout de nouveaux endpoints webhooks. |
+| **D)** | Mettre en place auth basique (Étape 2) | Préparer au multi-utilisateurs. |
+| **E)**
+| **E)** | Tests / validation des connecteurs (Étape 8.4) | Garantir stabilité à chaque ajout.
+
+**Recommandation:** Commencer par **A)** - étendre le schéma + repo pattern. C'est le socle qui facilitera toutes les étapes suivantes.

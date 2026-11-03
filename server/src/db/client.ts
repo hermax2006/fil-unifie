@@ -10,8 +10,4 @@ fs.mkdirSync(dataDir, { recursive: true });
 const dbPath = path.join(dataDir, 'fil-unifie.sqlite');
 export const db = new Database(dbPath);
 
-export function migrate() {
-  const schemaPath = path.join(__dirname, 'schema.sql');
-  const schema = fs.readFileSync(schemaPath, 'utf8');
-  db.exec(schema);
-}
+export { migrate } from './migrate.js';
