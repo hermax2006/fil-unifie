@@ -1,7 +1,9 @@
 import express from 'express';
+import cookieParser from 'cookie-parser';
 import { config } from './config/index.js';
 import { apiRouter } from './routes/api.js';
 import { webhooksRouter } from './webhooks/router.js';
+import { authRouter } from './routes/auth.js';
 import { migrate } from './db/client.js';
 
 migrate();
@@ -13,7 +15,9 @@ app.use(express.json({
   limit: '1mb',
   verify: (req, _res, buf) => { (req as any).rawBody = buf; },
 }));
+app.use(cookieParser());
 
+app.use('/auth', authRouter);
 app.use('/api', apiRouter);
 app.use('/webhooks', webhooksRouter);
 
