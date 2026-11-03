@@ -160,3 +160,47 @@ Pour avancer concrètement dans l'immédiat:
 - **Idempotence**: calculer `dedup_key` et ignorer les doublons (ne pas `INSERT OR REPLACE`).
 - **SSE**: préparer diffusion par utilisateur/compte (ne plus broadcaster à tout le monde une fois auth en place).
 - **Ordre à suivre**: A' → D (auth) → C (webhooks sécurisés) → B (UI connexions) → E (tests/durcissement)
+
+## Tables intermédiaires à prévoir (évolutif)
+
+### Indispensables au démarrage (MVP minimal)
+| Table | Rôle | Colonnes clés |
+|---|---|---|
+| `users` | Comptes utilisateurs | `id`, `email` (unique), `password_hash` |
+| `sessions` | Sessions connectées (cookie httpOnly) | `id`, `user_id`, `expires_at` |
+| `connector_connections` | App branchée par l'utilisateur | `id`, `account_id`, `connector_id`, `tokens_enc`, `cursor`, `active` |
+| `events` | Messages/notifications du fil | `id`, `account_id`, `connection_id`, `external_id`, `dedup_key` (UNIQUE), `kind`, `body`, `occurred_at`, `received_at`, `read_at`, `user_id` |
+| `schema_migrations` | Suivi des migrations | `version`, `applied_at` |
+
+### Selon les étapes
+| Table | Étape | Rôle |
+|---|---|---|
+| `accounts` | Auth/espaces | Espace de travail d'un utilisateur (utile si multi-comptes/espaces) |
+| `webhook_endpoints` | Webhooks sécurisés | Endpoint par connexion avec `path_token_hash`, `secret_enc` |
+| `webhook_deliveries` | Fiabilité webhooks | Historique des requêtes webhooks (acceptée/rejetée/doublon) |
+| `password_resets` | Auth | Jetons à usage unique pour réinitialisation mot de passe |
+| `app_wishes` | Catalogue | Demandes "Je veux celle-ci" pour apps "bientôt" |
+| `oauth_states` | OAuth | Protection contre CSRF lors du retour OAuth |
+| `sync_state` | Polling | Curseur par ressource (dossiers/calendriers) au lieu d'un seul |
+| `sync_runs` | Polling | Historique des synchronisations (début/fin/erreur) |
+| `outbound_messages` | Réponses | Réponses envoyées depuis le fil + statut |
+| `audit_log` | Sécurité/traçabilité | Actions utilisateur |
+| `threads` | UX | Regroupement des messages par conversation |
+| `event_attachments` | UX | Pièces jointes |
+| `user_settings` | UX | Préférences (langue, voix, notifications) |
+| `push_subscriptions` | Notifications | Abonnements push par appareil |
+| `saved_filters` | UX | Filtres/recherches enregistrés |
+| `ai_usage` | Voix/IA | Consommation par utilisateur (limiter coûts) |
+| `summaries` | Voix/IA | Résumés conservés |
+| `reply_drafts` | Voix/IA | Brouillons proposés en attente de validation |
+| `plans`, `subscriptions`, `payments` | Paiements | Offres/abonnements/paiements |
+| `payment_webhooks` | Paiements | Webhooks prestataires de paiement |
+
+### Tables de liaison (si besoin)
+| Table | Étape | Rôle |
+|---|---|---|
+| `account_members` | Partage | Lien utilisateurs ↔ comptes (plusieurs personnes par espace) |
+| `event_tags` | Organisation | Étiquettes partagées sur plusieurs événements |
+| `event_reads` | Partage/UX | Statut lu/non-lu par utilisateur (si compte partagé) |
+
+**Note:** Les files BullMQ/Redis ne génèrent pas de tables SQL. `sessions` peut vivre en SQLite ou Redis selon le choix.
