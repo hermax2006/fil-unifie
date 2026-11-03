@@ -5,140 +5,152 @@ Pour une meilleure lisibilité dans Obsidian (Mermaid plus petit).
 ## 1) Types partagés
 ```mermaid
 classDiagram
-    class UnifiedEvent {
-        +id: string
-        +connector: string
-        +accountId: string
-        +externalId: string
-        +kind: EventKind
-        +author: Author
-        +title: string
-        +body: string
-        +url: string
-        +occurredAt: string
-        +receivedAt: string
+    class EvenementUnifie {
+        +identifiant: string
+        +connecteur: string
+        +compteId: string
+        +identifiantExterne: string
+        +type: TypeEvenement
+        +auteur: Auteur
+        +titre: string
+        +corps: string
+        +lien: string
+        +dateEvenement: string
+        +dateReception: string
     }
-    class NewEvent {
-        +connector: string
-        +accountId: string
-        +kind: EventKind
-        +body: string
+    class NouvelEvenement {
+        +connecteur: string
+        +compteId: string
+        +identifiantExterne: string
+        +type: TypeEvenement
+        +auteur: Auteur
+        +titre: string
+        +corps: string
+        +lien: string
+        +dateEvenement: string
     }
-    class ConnectorInfo {
-        +id: string
-        +name: string
-        +category: string
-        +access: string
-        +canReply: boolean
-        +status: string
+    class InfoConnecteur {
+        +identifiant: string
+        +nom: string
+        +categorie: string
+        +acces: string
+        +peutRepondre: boolean
+        +statut: string
     }
-    UnifiedEvent --> NewEvent
+    class Auteur {
+        +identifiant: string
+        +nom: string
+    }
+    EvenementUnifie --> Auteur
+    NouvelEvenement --> Auteur
 ```
 
 ## 2) Connecteurs
 ```mermaid
 classDiagram
-    class BaseConnector {
+    class ConnecteurAbstrait {
         <<abstract>>
-        +info: ConnectorInfo
-        +verifyWebhook(req, secret): boolean
-        +normalize(req, accountId): NewEvent[]
+        +infos: InfoConnecteur
+        +verifierWebhook(requete, secret): boolean
+        +normaliser(requete, compteId): NouvelEvenement[]
     }
-    class WebhookConnector
-    class TelegramConnector
-    class SlackConnector
-    class ConnectorRegistry {
-        +get(id): BaseConnector
-        +catalog(): ConnectorInfo[]
+    class ConnecteurWebhook
+    class ConnecteurTelegram
+    class ConnecteurSlack
+    class RegistreConnecteurs {
+        +obtenir(identifiant): ConnecteurAbstrait
+        +catalogue(): InfoConnecteur[]
     }
-    BaseConnector <|-- WebhookConnector
-    BaseConnector <|-- TelegramConnector
-    BaseConnector <|-- SlackConnector
-    ConnectorRegistry --> BaseConnector
+    ConnecteurAbstrait <|-- ConnecteurWebhook
+    ConnecteurAbstrait <|-- ConnecteurTelegram
+    ConnecteurAbstrait <|-- ConnecteurSlack
+    RegistreConnecteurs --> ConnecteurAbstrait
 ```
 
-## 3) Webhooks & endpoints
+## 3) Webhooks & points d'entrée
 ```mermaid
 classDiagram
-    class WebhookRouter {
-        +post()
+    class RouteurWebhook {
+        +traiter()
     }
-    class EndpointResolver {
-        +resolveEndpoint(pathToken)
+    class ResolveurPointEntree {
+        +resoudreJeton(jetonChemin): PointEntreeWebhook
     }
-    class WebhookEndpoint {
-        +id: string
-        +account_id: string
-        +connector_id: string
-        +path_token: string
-        +secret_encrypted: string
+    class PointEntreeWebhook {
+        +identifiant: string
+        +compteId: string
+        +connecteurId: string
+        +jetonChemin: string
+        +secretChiffre: string
+        +actif: boolean
     }
-    WebhookRouter --> EndpointResolver
-    EndpointResolver --> WebhookEndpoint
+    RouteurWebhook --> ResolveurPointEntree
+    ResolveurPointEntree --> PointEntreeWebhook
 ```
 
 ## 4) Traitement & temps réel
 ```mermaid
 classDiagram
-    class Queue {
+    class FileAttente {
         <<interface>>
-        +enqueueEvent(e: NewEvent)
+        +ajouterEvenement(evenement: NouvelEvenement)
     }
-    class MemoryQueue
-    class ProcessEvent {
-        +processEvent(input): Promise~void~
+    class FileAttenteMemoire
+    class TraiterEvenement {
+        +traiter(evenement: NouvelEvenement): Promise~void~
     }
-    class SSE {
-        +sseHandler(req,res)
-        +broadcast(e)
+    class DiffusionTempsReel {
+        +gererConnexion(req,res)
+        +diffuser(evenement: EvenementUnifie)
     }
-    Queue <|-- MemoryQueue
-    Queue --> ProcessEvent
-    ProcessEvent --> SSE
+    FileAttente <|-- FileAttenteMemoire
+    FileAttente --> TraiterEvenement
+    TraiterEvenement --> DiffusionTempsReel
 ```
 
 ## 5) Persistance & comptes
 ```mermaid
 classDiagram
-    class DbClient {
-        +db: Database
-        +migrate()
+    class ClientBaseDonnees {
+        +connexion: Database
+        +migrer()
     }
-    class EventsRepo {
-        +makeDedupKey(e): string
-        +addEventRow(e): boolean
-        +listEvents(limit,userId)
+    class DepotEvenements {
+        +genererCleDedoublonnage(evenement): string
+        +ajouterLigne(evenement): boolean
+        +lister(limit, utilisateurId)
     }
-    class User {
-        +id: string
-        +email: string
-        +password_hash: string
+    class Utilisateur {
+        +identifiant: string
+        +courriel: string
+        +motDePasseHache: string
     }
-    class Account {
-        +id: string
-        +user_id: string
-        +name: string
+    class Compte {
+        +identifiant: string
+        +utilisateurId: string
+        +nom: string
     }
-    class ConnectorConnection {
-        +id: string
-        +account_id: string
-        +connector_id: string
-        +encrypted_tokens_json: string
+    class ConnexionConnecteur {
+        +identifiant: string
+        +compteId: string
+        +connecteurId: string
+        +jetonsChiffres: string
+        +actif: boolean
     }
-    EventsRepo --> DbClient
-    Account --> User
-    ConnectorConnection --> Account
+    DepotEvenements --> ClientBaseDonnees
+    Compte --> Utilisateur
+    ConnexionConnecteur --> Compte
 ```
 
 ## Flux simplifié
 ```mermaid
 flowchart LR
-    A[App tierce] --> B[/webhooks/w/:path_token/]
-    B --> C[EndpointResolver]
-    C --> D[Connector]
-    D --> E[Queue]
-    E --> F[ProcessEvent]
-    F --> G[EventsRepo + dedup_key]
-    G --> H[SSE]
-    H --> I[Client]
+    A[Application tierce] --> B[/webhooks/w/:jetonChemin/]
+    B --> C[ResolveurPointEntree]
+    C --> D[Connecteur]
+    D --> E[FileAttente]
+    E --> F[TraiterEvenement]
+    F --> G[DepotEvenements + cleDedoublonnage]
+    G --> H[DiffusionTempsReel]
+    H --> I[Client web]
 ```
