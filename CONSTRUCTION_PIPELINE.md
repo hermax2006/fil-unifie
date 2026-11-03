@@ -141,3 +141,22 @@ Pour avancer concrètement dans l'immédiat:
 | **E)** | Tests / validation des connecteurs (Étape 8.4) | Garantir stabilité à chaque ajout.
 
 **Recommandation:** Commencer par **A)** - étendre le schéma + repo pattern. C'est le socle qui facilitera toutes les étapes suivantes.
+
+## Ajouts issus du correctif (Claude)
+
+### Corrections appliquées (Étape A' - Socle DB refondu)
+- [x] **Table `users`** ajoutée (auth futur)
+- [x] **Tables `accounts`, `connector_connections`, `webhook_endpoints`** ajoutées
+- [x] **`webhook_endpoints.path_token` UNIQUE** pour identifier l'endpoint sans exposer `accountId` dans l'URL
+- [x] **`events.dedup_key` UNIQUE** (idempotence dès les webhooks, Slack/Telegram)
+- [x] **`events.user_id`, `events.connector_id`** ajoutés (préparation isolation SSE par utilisateur)
+- [x] **Système de migrations** avec `schema_version`
+- [x] **Repo pattern** (`server/src/db/repos/`) pour isoler SQL
+- [x] **`endpoint-resolver.ts`** prêt pour résolution par `path_token`
+
+### Règles à respecter (mises à jour)
+- **Secrets webhook**: ne pas hacher les secrets utilisés pour recalculer des HMAC (Slack). Chiffrer avec AES-256-GCM si nécessaire. Seul `path_token` peut être hashe/retrouvé.
+- **URL webhook**: basculer vers `/webhooks/w/:path_token` (plus `/webhooks/:connector/:accountId`). Résolution via `endpoint-resolver`.
+- **Idempotence**: calculer `dedup_key` et ignorer les doublons (ne pas `INSERT OR REPLACE`).
+- **SSE**: préparer diffusion par utilisateur/compte (ne plus broadcaster à tout le monde une fois auth en place).
+- **Ordre à suivre**: A' → D (auth) → C (webhooks sécurisés) → B (UI connexions) → E (tests/durcissement)
