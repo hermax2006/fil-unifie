@@ -4,6 +4,7 @@ import { config } from './config/index.js';
 import { apiRouter } from './routes/api.js';
 import { webhooksRouter } from './webhooks/router.js';
 import { authRouter } from './routes/auth.js';
+import { connectionsRouter } from './routes/connections.js';
 import { migrate } from './db/client.js';
 
 migrate();
@@ -18,6 +19,7 @@ app.use(express.json({
 app.use(cookieParser());
 
 app.use('/auth', authRouter);
+app.use('/api/connections', connectionsRouter);
 app.use('/api', apiRouter);
 app.use('/webhooks', webhooksRouter);
 
