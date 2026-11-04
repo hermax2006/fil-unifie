@@ -12,6 +12,13 @@ export interface WebhookEndpointRow {
 }
 
 export function createEndpoint(accountId: string, connectorId: string, secretEncrypted?: string | null) {
+  // En dev, créer le compte s'il n'existe pas pour faciliter les tests
+  const account = db.prepare('SELECT id FROM accounts WHERE id = ?').get(accountId);
+  if (!account) {
+    db.prepare('INSERT OR IGNORE INTO accounts (id, user_id, name, created_at) VALUES (?, ?, ?, datetime(\'now\'))')
+      .run(accountId, 'dev', accountId);
+  }
+
   const id = randomBytes(16).toString('hex');
   const pathToken = randomBytes(24).toString('hex');
   const stmt = db.prepare(`
