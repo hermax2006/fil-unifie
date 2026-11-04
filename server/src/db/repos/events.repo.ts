@@ -78,3 +78,12 @@ export function listEvents(limit = 100, userId?: string): UnifiedEvent[] {
     receivedAt: r.receivedAt,
   }));
 }
+
+/*
+ * REPOSITORY ÉVÉNEMENTS
+ * ---------------------
+ * - makeDedupKey() : génère une clé unique pour éviter les doublons
+ *   (basée sur connecteur, compte, identifiant externe, contenu...)
+ * - addEventRow() : insère en BDD, retourne false si doublon (UNIQUE sur dedup_key)
+ * - listEvents() : récupère les événements, filtrable par utilisateur
+ */

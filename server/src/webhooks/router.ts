@@ -68,3 +68,19 @@ webhooksRouter.post('/:connector/:accountId', (req, res) => {
   events.forEach(enqueueEvent);
   res.status(200).json({ accepted: events.length });
 });
+
+/*
+ * ROUTEUR WEBHOOKS - EXPLICATION
+ * ------------------------------
+ * 1. /webhooks/w/:pathToken (NOUVEAU - SÉCURISÉ)
+ *    - On résout l'endpoint via path_token (jamais d'accountId dans l'URL)
+ *    - On récupère le connecteur depuis le registre
+ *    - On déchiffre le secret et on vérifie la signature
+ *    - On gère le handshake (ex: Slack URL verification)
+ *    - On normalise en NouvelEvenement et on met en file
+ * 
+ * 2. /webhooks/:connector/:accountId (ANCIEN - RÉTROCOMPATIBLE)
+ *    - Conservé uniquement en développement
+ *    - Désactivé en production (410 Gone)
+ *    - À supprimer une fois migration complète vers path_token
+ */

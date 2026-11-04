@@ -26,3 +26,12 @@ app.use('/webhooks', webhooksRouter);
 app.listen(config.port, () => {
   console.log(`Serveur sur http://localhost:${config.port}`);
 });
+
+/*
+ * POINT D'ENTRÉE DU SERVEUR
+ * ------------------------
+ * 1. On exécute les migrations SQLite au démarrage
+ * 2. On configure Express (JSON avec rawBody pour vérifier signatures HMAC)
+ * 3. On monte les routes : /auth, /api, /webhooks
+ * 4. Le serveur écoute sur le port configuré
+ */
