@@ -147,3 +147,105 @@ code {
   font-family: 'JetBrains Mono', monospace;
   font-size: 0.9rem;
 }
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.tabs {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.tab {
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: transparent;
+  color: inherit;
+  padding: 0.4rem 0.9rem;
+  cursor: pointer;
+}
+
+.tab.active {
+  background: rgba(157, 180, 255, 0.25);
+  border-color: rgba(157, 180, 255, 0.6);
+}
+
+.full {
+  grid-column: 1 / -1;
+}
+
+.connections {
+  max-width: 720px;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.8rem;
+  align-items: end;
+}
+
+.form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-size: 0.95rem;
+}
+
+.form input,
+.form select {
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: transparent;
+  color: inherit;
+  padding: 0.5rem 0.7rem;
+}
+
+.result {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.result-row {
+  display: grid;
+  grid-template-columns: 140px 1fr auto;
+  gap: 0.8rem;
+  align-items: center;
+}
+
+.result-row .label {
+  color: rgba(244, 244, 249, 0.7);
+}
+
+.result-row .value {
+  overflow-x: auto;
+}
+
+.result-row .value.secret {
+  color: #f5b700;
+}
+
+.btn.small {
+  padding: 0.35rem 0.7rem;
+  font-size: 0.9rem;
+}
+
+.warning {
+  color: #f5b700;
+}
+
+.error {
+  color: #ff6b6b;
+}
