@@ -1,5 +1,12 @@
 import 'dotenv/config';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import dotenv from 'dotenv';
 import express from 'express';
+
+// Charger .env depuis la racine du projet (4-/) si présent
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 import cookieParser from 'cookie-parser';
 import { config } from './config/index.js';
 import { apiRouter } from './routes/api.js';
