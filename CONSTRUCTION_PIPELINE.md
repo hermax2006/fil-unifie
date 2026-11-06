@@ -204,3 +204,12 @@ Pour avancer concrètement dans l'immédiat:
 | `event_reads` | Partage/UX | Statut lu/non-lu par utilisateur (si compte partagé) |
 
 **Note:** Les files BullMQ/Redis ne génèrent pas de tables SQL. `sessions` peut vivre en SQLite ou Redis selon le choix.
+
+## Étape C - Avancement (webhooks sécurisés)
+- [x] Route sécurisée `/webhooks/w/:path_token` avec `endpoint-resolver`
+- [x] Secrets webhook chiffrés AES-256-GCM (`secret-manager.ts`), affichés une seule fois
+- [x] CRUD endpoints (génération/liste/révocation) + UI "Connexions"
+- [x] Ancien routeur `/webhooks/:connector/:accountId` : dev only, 410 en prod
+- [x] Slack HMAC vérifié avec `rawBody` + timestamp anti-rejeu (OK pour secret déchiffré)
+- [ ] Rotation de secret / hash `path_token` (optionnel selon politique)
+- [ ] Tests automatisés verifyWebhook (Slack/Telegram/webhook)
