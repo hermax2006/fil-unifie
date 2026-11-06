@@ -1,12 +1,13 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 type User = { id: string; email: string; accountId?: string } | null;
+type Endpoint = { id: string; connectorId: string; url: string; active: boolean; createdAt: string };
 
 /**
  * Onglet "Connexions"
- * - Permet de générer une URL webhook sécurisée (/webhooks/w/:path_token)
- * - Le secret est chiffré côté serveur et affiché UNE SEULE FOIS
- * - Si connecté: le serveur force l'utilisation du compte de l'utilisateur
+ * - Génère une URL webhook sécurisée (/webhooks/w/:path_token)
+ * - Secret chiffré côté serveur, affiché UNE SEULE FOIS
+ * - Liste + révocation des endpoints existants
  */
 export function Connections({ user }: { user?: User }) {
   const [accountId, setAccountId] = useState('mon-compte');
@@ -17,6 +18,21 @@ export function Connections({ user }: { user?: User }) {
   const [copied, setCopied] = useState<'url' | 'secret' | 'curl' | null>(null);
   const [testLoading, setTestLoading] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
+  const [endpoints, setEndpoints] = useState<Endpoint[]>([]);
+
+  async function loadEndpoints() {
+    try {
+      const q = !user ? `?accountId=${encodeURIComponent(accountId)}` : '';
+      const res = await fetch(`/api/connections/webhook/endpoints${q}`, { credentials: 'include' });
+      if (!res.ok) return;
+      setEndpoints(await res.json());
+    } catch {}
+  }
+
+  useEffect(() => {
+    loadEndpoints();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.accountId]);
 
   async function generate() {
     setLoading(true);
@@ -32,10 +48,11 @@ export function Connections({ user }: { user?: User }) {
       });
       const data = await res.json();
       if (!res.ok) {
-        if (res.status === 401) throw new Error('Non authentifié. Connecte-toi d\'abord (étape auth).');
+        if (res.status === 401) throw new Error('Non authentifié. Connecte-toi d\'abord.');
         throw new Error(data.error || 'Erreur');
       }
       setResult(data);
+      loadEndpoints();
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -66,16 +83,8 @@ export function Connections({ user }: { user?: User }) {
       const header = connectorId === 'telegram' ? 'x-telegram-bot-api-secret-token' : 'x-webhook-secret';
       const res = await fetch(result.url, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          [header]: result.secret,
-        },
-        body: JSON.stringify({
-          kind: 'message',
-          title: 'Test depuis l\'UI',
-          body: 'Ceci est un test envoyé depuis l\'onglet Connexions',
-          author: 'ui',
-        }),
+        headers: { 'Content-Type': 'application/json', [header]: result.secret },
+        body: JSON.stringify({ kind: 'message', title: 'Test depuis l\'UI', body: 'Ceci est un test envoyé depuis l\'onglet Connexions', author: 'ui' }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `Erreur ${res.status}`);
@@ -87,12 +96,21 @@ export function Connections({ user }: { user?: User }) {
     }
   }
 
+  async function revoke(id: string) {
+    await fetch(`/api/connections/webhook/endpoints/${id}/revoke`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ accountId }),
+    });
+    loadEndpoints();
+  }
+
   return (
     <div className="connections">
       <h2>Gérer les connexions</h2>
       <p className="hint">
-        Génère une URL webhook sécurisée avec un <code>path_token</code> (plus d'ID compte dans l'URL).
-        Le secret est chiffré en base (AES-256-GCM) et n'apparaît qu'une seule fois.
+        URLs sécurisées via <code>/webhooks/w/:path_token</code>. Secret chiffré (AES-256-GCM), affiché une seule fois.
       </p>
 
       <div className="form">
@@ -102,11 +120,7 @@ export function Connections({ user }: { user?: User }) {
             <input value={accountId} onChange={(e) => setAccountId(e.target.value)} placeholder="mon-compte" />
           </label>
         )}
-        {user && (
-          <div className="info">
-            Compte lié : <code>{user.accountId ?? '—'}</code> ({user.email})
-          </div>
-        )}
+        {user && <div className="info">Compte lié : <code>{user.accountId ?? '—'}</code> ({user.email})</div>}
         <label>
           Connecteur
           <select value={connectorId} onChange={(e) => setConnectorId(e.target.value)}>
@@ -127,35 +141,38 @@ export function Connections({ user }: { user?: User }) {
           <div className="result-row">
             <span className="label">URL webhook</span>
             <code className="value">{result.url}</code>
-            <button className="btn small" onClick={() => copy(result.url, 'url')}>
-              {copied === 'url' ? 'Copié !' : 'Copier'}
-            </button>
+            <button className="btn small" onClick={() => copy(result.url, 'url')}>{copied === 'url' ? 'Copié !' : 'Copier'}</button>
           </div>
           <div className="result-row">
-            <span className="label">Secret (à garder)</span>
+            <span className="label">Secret</span>
             <code className="value secret">{result.secret}</code>
-            <button className="btn small" onClick={() => copy(result.secret, 'secret')}>
-              {copied === 'secret' ? 'Copié !' : 'Copier'}
-            </button>
+            <button className="btn small" onClick={() => copy(result.secret, 'secret')}>{copied === 'secret' ? 'Copié !' : 'Copier'}</button>
           </div>
           <p className="warning">{result.warning}</p>
-
           <div className="result-actions">
-            <button className="btn" onClick={sendTest} disabled={testLoading}>
-              {testLoading ? 'Envoi...' : 'Envoyer un webhook de test'}
-            </button>
-            <button className="btn" onClick={() => copy(curlCommand(), 'curl')}>
-              {copied === 'curl' ? 'Copié !' : 'Copier la commande curl'}
-            </button>
+            <button className="btn" onClick={sendTest} disabled={testLoading}>{testLoading ? 'Envoi...' : 'Envoyer un webhook de test'}</button>
+            <button className="btn" onClick={() => copy(curlCommand(), 'curl')}>{copied === 'curl' ? 'Copié !' : 'Copier curl'}</button>
           </div>
-
           {testResult && <p className={testResult.startsWith('OK') ? 'success' : 'error'}>{testResult}</p>}
-
-          <details className="details">
-            <summary>Voir la commande curl</summary>
-            <pre className="code-block">{curlCommand()}</pre>
-          </details>
+          <details className="details"><summary>Voir la commande curl</summary><pre className="code-block">{curlCommand()}</pre></details>
         </div>
+      )}
+
+      <h3>Endpoints existants</h3>
+      {endpoints.length === 0 ? (
+        <p className="hint">Aucun endpoint pour ce compte.</p>
+      ) : (
+        <ul className="endpoint-list">
+          {endpoints.map((ep) => (
+            <li key={ep.id} className={`endpoint ${ep.active ? '' : 'revoked'}`}>
+              <div>
+                <strong>{ep.connectorId}</strong> <span className="badge">{ep.active ? 'actif' : 'révoqué'}</span>
+                <code className="value">{ep.url}</code>
+              </div>
+              {ep.active && <button className="btn small danger" onClick={() => revoke(ep.id)}>Révoquer</button>}
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );

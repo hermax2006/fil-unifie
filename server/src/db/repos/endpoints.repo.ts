@@ -42,3 +42,17 @@ export function findByPathToken(pathToken: string): WebhookEndpointRow | undefin
   `);
   return stmt.get(pathToken) as WebhookEndpointRow | undefined;
 }
+
+export function listEndpointsForAccount(accountId: string) {
+  return db.prepare(`
+    SELECT id, account_id, connector_id, path_token, active, created_at, updated_at
+    FROM webhook_endpoints
+    WHERE account_id = ?
+    ORDER BY created_at DESC
+  `).all(accountId);
+}
+
+export function revokeEndpoint(id: string, accountId: string): boolean {
+  const info = db.prepare('UPDATE webhook_endpoints SET active = 0, updated_at = datetime(\'now\') WHERE id = ? AND account_id = ?').run(id, accountId);
+  return info.changes > 0;
+}
