@@ -17,7 +17,7 @@ export function Feed() {
   const [events, setEvents] = useState<UnifiedEvent[]>([]);
 
   useEffect(() => {
-    fetch('/api/events')
+    fetch('/api/events', { credentials: 'include' })
       .then((r) => r.json())
       .then(setEvents)
       .catch(() => {});

@@ -279,3 +279,44 @@ header {
   font-size: 0.85rem;
   line-height: 1.5;
 }
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.auth-panel {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.auth-panel input,
+.auth-panel select {
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: transparent;
+  color: inherit;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.9rem;
+}
+
+.user-chip {
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(157, 180, 255, 0.15);
+  border: 1px solid rgba(157, 180, 255, 0.3);
+  font-size: 0.9rem;
+}
+
+.info {
+  color: rgba(244, 244, 249, 0.8);
+  font-size: 0.95rem;
+}
+
+.error.small {
+  font-size: 0.85rem;
+}

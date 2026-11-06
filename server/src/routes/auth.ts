@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { createUser, findUserByEmail } from '../db/repos/users.repo.js';
 import { createSession, deleteSession } from '../db/repos/sessions.repo.js';
 import { requireAuth, type AuthRequest } from '../auth/middleware.js';
+import { findOrCreateAccountForUser } from '../db/repos/accounts.repo.js';
 
 export const authRouter = Router();
 
@@ -14,6 +15,7 @@ authRouter.post('/register', async (req, res) => {
     if (findUserByEmail(email)) return res.status(409).json({ error: 'cet email est déjà utilisé' });
     const hash = await bcrypt.hash(String(password), 10);
     const user = createUser(email, hash);
+    const account = findOrCreateAccountForUser(user.id);
     const session = createSession(user.id);
     res.cookie('session', session.id, {
       httpOnly: true,
@@ -21,7 +23,7 @@ authRouter.post('/register', async (req, res) => {
       secure: process.env.NODE_ENV === 'production',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
-    return res.json({ ok: true, user: { id: user.id, email: user.email } });
+    return res.json({ ok: true, user: { id: user.id, email: user.email, accountId: account.id } });
   } catch (e) {
     return res.status(500).json({ error: 'erreur serveur' });
   }
@@ -35,6 +37,7 @@ authRouter.post('/login', async (req, res) => {
     if (!user) return res.status(401).json({ error: 'identifiants invalides' });
     const ok = await bcrypt.compare(String(password), user.password_hash);
     if (!ok) return res.status(401).json({ error: 'identifiants invalides' });
+    const account = findOrCreateAccountForUser(user.id);
     const session = createSession(user.id);
     res.cookie('session', session.id, {
       httpOnly: true,
@@ -42,7 +45,7 @@ authRouter.post('/login', async (req, res) => {
       secure: process.env.NODE_ENV === 'production',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
-    return res.json({ ok: true, user: { id: user.id, email: user.email } });
+    return res.json({ ok: true, user: { id: user.id, email: user.email, accountId: account.id } });
   } catch (e) {
     return res.status(500).json({ error: 'erreur serveur' });
   }
@@ -56,5 +59,6 @@ authRouter.post('/logout', (req, res) => {
 });
 
 authRouter.get('/me', requireAuth, (req: AuthRequest, res) => {
-  return res.json({ user: req.user });
+  const account = req.userId ? findOrCreateAccountForUser(req.userId) : null;
+  return res.json({ user: { ...req.user, accountId: account?.id } });
 });

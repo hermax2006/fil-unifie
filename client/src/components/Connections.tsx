@@ -1,12 +1,14 @@
 import { useState } from 'react';
 
+type User = { id: string; email: string; accountId?: string } | null;
+
 /**
  * Onglet "Connexions"
  * - Permet de générer une URL webhook sécurisée (/webhooks/w/:path_token)
  * - Le secret est chiffré côté serveur et affiché UNE SEULE FOIS
- * - En dev, pas besoin d'être connecté. En prod, auth requise.
+ * - Si connecté: le serveur force l'utilisation du compte de l'utilisateur
  */
-export function Connections() {
+export function Connections({ user }: { user?: User }) {
   const [accountId, setAccountId] = useState('mon-compte');
   const [connectorId, setConnectorId] = useState('webhook');
   const [loading, setLoading] = useState(false);
@@ -94,10 +96,17 @@ export function Connections() {
       </p>
 
       <div className="form">
-        <label>
-          ID du compte
-          <input value={accountId} onChange={(e) => setAccountId(e.target.value)} placeholder="mon-compte" />
-        </label>
+        {!user && (
+          <label>
+            ID du compte (dev)
+            <input value={accountId} onChange={(e) => setAccountId(e.target.value)} placeholder="mon-compte" />
+          </label>
+        )}
+        {user && (
+          <div className="info">
+            Compte lié : <code>{user.accountId ?? '—'}</code> ({user.email})
+          </div>
+        )}
         <label>
           Connecteur
           <select value={connectorId} onChange={(e) => setConnectorId(e.target.value)}>
