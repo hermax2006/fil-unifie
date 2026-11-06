@@ -12,10 +12,15 @@ export interface WebhookEndpointRow {
 }
 
 export function createEndpoint(accountId: string, connectorId: string, secretEncrypted?: string | null) {
-  // En dev, créer le compte s'il n'existe pas pour faciliter les tests
+  // En dev, créer le compte + utilisateur s'ils n'existent pas pour faciliter les tests
+  const user = db.prepare('SELECT id FROM users WHERE id = ?').get('dev');
+  if (!user) {
+    db.prepare("INSERT OR IGNORE INTO users (id, email, password_hash, created_at, updated_at) VALUES (?, ?, ?, datetime('now'), datetime('now'))")
+      .run('dev', 'dev@local.test', 'x');
+  }
   const account = db.prepare('SELECT id FROM accounts WHERE id = ?').get(accountId);
   if (!account) {
-    db.prepare('INSERT OR IGNORE INTO accounts (id, user_id, name, created_at) VALUES (?, ?, ?, datetime(\'now\'))')
+    db.prepare("INSERT OR IGNORE INTO accounts (id, user_id, name, created_at) VALUES (?, ?, ?, datetime('now'))")
       .run(accountId, 'dev', accountId);
   }
 
