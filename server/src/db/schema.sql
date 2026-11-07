@@ -67,6 +67,7 @@ CREATE TABLE IF NOT EXISTS events (
   url TEXT,
   occurred_at TEXT NOT NULL,
   received_at TEXT NOT NULL,
+  read_at TEXT,
   FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
 );

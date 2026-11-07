@@ -15,6 +15,7 @@ export interface UnifiedEvent {
   url?: string;
   occurredAt: string;         // ISO : quand c'est arrivé dans l'app source
   receivedAt: string;         // ISO : quand le fil l'a reçu
+  readAt?: string;            // ISO : quand l'utilisateur a lu l'événement
 }
 
 /** Événement produit par un connecteur, avant que le serveur ajoute id et receivedAt. */

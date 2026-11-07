@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { UnifiedEvent } from '@fil/shared';
 
 function timeAgo(iso: string) {
   const diff = Date.now() - new Date(iso).getTime();
   const s = Math.floor(diff / 1000);
-  if (s < 60) return 'à l\'instant';
+  if (s < 60) return "à l'instant";
   const m = Math.floor(s / 60);
   if (m < 60) return `il y a ${m} min`;
   const h = Math.floor(m / 60);
@@ -15,45 +15,90 @@ function timeAgo(iso: string) {
 
 export function Feed() {
   const [events, setEvents] = useState<UnifiedEvent[]>([]);
+  const [connector, setConnector] = useState('');
+  const [kind, setKind] = useState('');
+  const [read, setRead] = useState<'all' | 'read' | 'unread'>('all');
+
+  async function load() {
+    const qs = new URLSearchParams();
+    if (connector) qs.set('connector', connector);
+    if (kind) qs.set('kind', kind);
+    if (read !== 'all') qs.set('read', read);
+    const res = await fetch(`/api/events?${qs.toString()}`, { credentials: 'include' });
+    if (res.ok) setEvents(await res.json());
+  }
 
   useEffect(() => {
-    fetch('/api/events', { credentials: 'include' })
-      .then((r) => r.json())
-      .then(setEvents)
-      .catch(() => {});
-
+    load();
     const es = new EventSource('/api/stream');
     es.onmessage = (ev) => {
       try {
         const e = JSON.parse(ev.data) as UnifiedEvent;
-        setEvents((prev) => [e, ...prev].slice(0, 100));
+        setEvents((prev) => {
+          if (connector && e.connector !== connector) return prev;
+          if (kind && e.kind !== kind) return prev;
+          if (read === 'read') return prev;
+          return [e, ...prev].slice(0, 100);
+        });
       } catch {}
     };
     return () => es.close();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connector, kind, read]);
 
-  if (events.length === 0) {
-    return <p className="empty">Aucun événement pour l'instant.</p>;
+  const connectors = useMemo(() => Array.from(new Set(events.map((e) => e.connector))), [events]);
+
+  async function markRead(id: string) {
+    await fetch(`/api/events/${id}/read`, { method: 'POST', credentials: 'include' });
+    setEvents((prev) => prev.map((e) => (e.id === id ? { ...e, readAt: e.readAt || new Date().toISOString() } : e)));
   }
 
   return (
-    <ul className="feed-list">
-      {events.map((e) => (
-        <li key={e.id} className="event">
-          <div className="event-header">
-            <span className="event-connector">{e.connector}</span>
-            <span className="event-time">{timeAgo(e.receivedAt)}</span>
-          </div>
-          {e.title && <div className="event-title">{e.title}</div>}
-          <div className="event-body">{e.body}</div>
-          {e.author?.name && <div className="event-author">— {e.author.name}</div>}
-          {e.url && (
-            <a className="event-link" href={e.url} target="_blank" rel="noreferrer">
-              Ouvrir
-            </a>
-          )}
-        </li>
-      ))}
-    </ul>
+    <div className="feed-wrap">
+      <div className="filters">
+        <select value={connector} onChange={(e) => setConnector(e.target.value)}>
+          <option value="">Tous connecteurs</option>
+          {connectors.map((c) => (
+            <option key={c} value={c}>{c}</option>
+          ))}
+        </select>
+        <select value={kind} onChange={(e) => setKind(e.target.value)}>
+          <option value="">Tous types</option>
+          <option value="message">message</option>
+          <option value="mention">mention</option>
+          <option value="notification">notification</option>
+          <option value="task">task</option>
+          <option value="other">other</option>
+        </select>
+        <select value={read} onChange={(e) => setRead(e.target.value as any)}>
+          <option value="all">Tous</option>
+          <option value="unread">Non lus</option>
+          <option value="read">Lus</option>
+        </select>
+        <button className="btn small" onClick={load}>Actualiser</button>
+      </div>
+
+      {events.length === 0 ? (
+        <p className="empty">Aucun événement pour l'instant.</p>
+      ) : (
+        <ul className="feed-list">
+          {events.map((e) => (
+            <li key={e.id} className={`event ${e.readAt ? 'read' : 'unread'}`}>
+              <div className="event-header">
+                <span className="event-connector">{e.connector}</span>
+                <span className="event-time">{timeAgo(e.receivedAt)}</span>
+              </div>
+              {e.title && <div className="event-title">{e.title}</div>}
+              <div className="event-body">{e.body}</div>
+              <div className="event-footer">
+                {e.author?.name && <span className="event-author">— {e.author.name}</span>}
+                {e.url && <a className="event-link" href={e.url} target="_blank" rel="noreferrer">Ouvrir</a>}
+                {!e.readAt && <button className="btn small" onClick={() => markRead(e.id)}>Marquer lu</button>}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }

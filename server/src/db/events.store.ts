@@ -1,5 +1,5 @@
 import type { UnifiedEvent } from '@fil/shared';
-import { addEventRow, listEvents as listEventsRepo } from './repos/events.repo.js';
+import { addEventRow, listEvents as listEventsRepo, markEventRead as markEventReadRepo, type EventFilters } from './repos/events.repo.js';
 import { db } from './client.js';
 
 const MAX = 500;
@@ -17,6 +17,10 @@ export function addEvent(e: UnifiedEvent, userId?: string | null): void {
   }
 }
 
-export function listEvents(limit = 100, userId?: string): UnifiedEvent[] {
-  return listEventsRepo(limit, userId);
+export function listEvents(limit = 100, userId?: string, filters: EventFilters = {}): UnifiedEvent[] {
+  return listEventsRepo(limit, userId, filters);
+}
+
+export function markEventRead(id: string, userId?: string): boolean {
+  return markEventReadRepo(id, userId);
 }
