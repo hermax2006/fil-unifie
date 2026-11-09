@@ -1,8 +1,10 @@
 import { Router } from 'express';
+import { z } from 'zod';
 import { requireAuth, attachUser, type AuthRequest } from '../auth/middleware.js';
 import { createEndpoint, listEndpointsForAccount, revokeEndpoint, rotateEndpointSecret } from '../db/repos/endpoints.repo.js';
 import { generateWebhookSecret, encryptWebhookSecret } from '../webhooks/secret-manager.js';
 import { findOrCreateAccountForUser } from '../db/repos/accounts.repo.js';
+import { validateBody } from '../utils/validate.js';
 
 export const connectionsRouter = Router();
 
@@ -28,11 +30,19 @@ connectionsRouter.get('/webhook/endpoints', isProd ? requireAuth : attachUser, (
   return res.json(rows);
 });
 
-connectionsRouter.post('/webhook/generate', isProd ? requireAuth : attachUser, (req: AuthRequest, res) => {
-  const { connectorId } = req.body ?? {};
-  const accountId = resolveAccountId(req, req.body?.accountId);
-  if (!connectorId) return res.status(400).json({ error: 'connectorId requis' });
+const generateSchema = z.object({
+  connectorId: z.string().min(1),
+  accountId: z.string().optional(),
+});
+
+connectionsRouter.post('/webhook/generate', isProd ? requireAuth : attachUser, validateBody(generateSchema), (req: AuthRequest, res) => {
+  const { connectorId, accountId: bodyAccountId } = (req as any).validatedBody as z.infer<typeof generateSchema>;
+  const accountId = resolveAccountId(req, bodyAccountId);
   if (!accountId) return res.status(400).json({ error: 'accountId requis en dev sans auth' });
+
+  // Valider que le connecteur existe
+  // (évite de créer des endpoints orphelins)
+  // import dynamique évité: on vérifie via registry dans une prochaine étape si nécessaire
 
   const secret = generateWebhookSecret();
   const encrypted = encryptWebhookSecret(secret);
@@ -66,4 +76,31 @@ connectionsRouter.post('/webhook/endpoints/:id/rotate-secret', isProd ? requireA
   const ok = rotateEndpointSecret(id, accountId, encrypted);
   if (!ok) return res.status(404).json({ error: 'endpoint introuvable ou inactif' });
   return res.json({ ok: true, secret, warning: 'Nouveau secret généré. Il ne sera plus affiché.' });
+});
+
+connectionsRouter.get('/connector-connections', isProd ? requireAuth : attachUser, async (req: AuthRequest, res) => {
+  const accountId = resolveAccountId(req, (req.query.accountId as string) || undefined);
+  if (!accountId) return res.status(400).json({ error: 'accountId requis' });
+  const { listConnections } = await import('../db/repos/connections.repo.js');
+  return res.json(listConnections(accountId).map((c) => ({
+    id: c.id,
+    connectorId: c.connector_id,
+    active: !!c.active,
+    config: c.config_json ? JSON.parse(c.config_json) : null,
+    hasTokens: !!c.encrypted_tokens_json,
+    updatedAt: c.updated_at,
+  })));
+});
+
+connectionsRouter.post('/connector-connections', isProd ? requireAuth : attachUser, validateBody(z.object({
+  connectorId: z.string().min(1),
+  config: z.record(z.any()).optional(),
+  accountId: z.string().optional(),
+})), async (req: AuthRequest, res) => {
+  const { connectorId, config, accountId: bodyAccountId } = (req as any).validatedBody;
+  const accountId = resolveAccountId(req, bodyAccountId);
+  if (!accountId) return res.status(400).json({ error: 'accountId requis' });
+  const { upsertConnection } = await import('../db/repos/connections.repo.js');
+  const id = upsertConnection(accountId, connectorId, config);
+  return res.json({ ok: true, id });
 });

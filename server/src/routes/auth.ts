@@ -1,19 +1,24 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
+import { z } from 'zod';
 import { createUser, findUserByEmail } from '../db/repos/users.repo.js';
 import { createSession, deleteSession } from '../db/repos/sessions.repo.js';
 import { requireAuth, type AuthRequest } from '../auth/middleware.js';
 import { findOrCreateAccountForUser } from '../db/repos/accounts.repo.js';
+import { validateBody } from '../utils/validate.js';
 
 export const authRouter = Router();
 
-authRouter.post('/register', async (req, res) => {
+const authSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(6),
+});
+
+authRouter.post('/register', validateBody(authSchema), async (req, res) => {
   try {
-    const { email, password } = req.body ?? {};
-    if (!email || !password) return res.status(400).json({ error: 'email et mot de passe requis' });
-    if (String(password).length < 6) return res.status(400).json({ error: 'mot de passe trop court (6 min)' });
+    const { email, password } = (req as any).validatedBody as z.infer<typeof authSchema>;
     if (findUserByEmail(email)) return res.status(409).json({ error: 'cet email est déjà utilisé' });
-    const hash = await bcrypt.hash(String(password), 10);
+    const hash = await bcrypt.hash(password, 10);
     const user = createUser(email, hash);
     const account = findOrCreateAccountForUser(user.id);
     const session = createSession(user.id);
@@ -29,13 +34,12 @@ authRouter.post('/register', async (req, res) => {
   }
 });
 
-authRouter.post('/login', async (req, res) => {
+authRouter.post('/login', validateBody(authSchema), async (req, res) => {
   try {
-    const { email, password } = req.body ?? {};
-    if (!email || !password) return res.status(400).json({ error: 'email et mot de passe requis' });
+    const { email, password } = (req as any).validatedBody as z.infer<typeof authSchema>;
     const user = findUserByEmail(email);
     if (!user) return res.status(401).json({ error: 'identifiants invalides' });
-    const ok = await bcrypt.compare(String(password), user.password_hash);
+    const ok = await bcrypt.compare(password, user.password_hash);
     if (!ok) return res.status(401).json({ error: 'identifiants invalides' });
     const account = findOrCreateAccountForUser(user.id);
     const session = createSession(user.id);
