@@ -213,3 +213,8 @@ Pour avancer concrètement dans l'immédiat:
 - [x] Slack HMAC vérifié avec `rawBody` + timestamp anti-rejeu (OK pour secret déchiffré)
 - [x] Tests Vitest : `verifyWebhook` (webhook/telegram/slack), handshake Slack, normalisation, `dedup_key`
 - [ ] Rotation de secret / hash `path_token` (optionnel selon politique)
+
+## Durcissement (fait)
+- [x] CORS strict via `ALLOWED_ORIGINS` (fallback localhost en dev)
+- [x] Handler d'erreur global (CORS -> 403)
+- [x] Rotation du secret webhook (`POST /webhook/endpoints/:id/rotate-secret`) + UI "Nouveau secret"

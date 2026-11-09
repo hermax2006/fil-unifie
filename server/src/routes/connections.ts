@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { requireAuth, attachUser, type AuthRequest } from '../auth/middleware.js';
-import { createEndpoint, listEndpointsForAccount, revokeEndpoint } from '../db/repos/endpoints.repo.js';
+import { createEndpoint, listEndpointsForAccount, revokeEndpoint, rotateEndpointSecret } from '../db/repos/endpoints.repo.js';
 import { generateWebhookSecret, encryptWebhookSecret } from '../webhooks/secret-manager.js';
 import { findOrCreateAccountForUser } from '../db/repos/accounts.repo.js';
 
@@ -55,4 +55,15 @@ connectionsRouter.post('/webhook/endpoints/:id/revoke', isProd ? requireAuth : a
   const ok = revokeEndpoint(id, accountId);
   if (!ok) return res.status(404).json({ error: 'endpoint introuvable' });
   return res.json({ ok: true });
+});
+
+connectionsRouter.post('/webhook/endpoints/:id/rotate-secret', isProd ? requireAuth : attachUser, (req: AuthRequest, res) => {
+  const accountId = resolveAccountId(req, req.body?.accountId);
+  if (!accountId) return res.status(400).json({ error: 'accountId requis' });
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const secret = generateWebhookSecret();
+  const encrypted = encryptWebhookSecret(secret);
+  const ok = rotateEndpointSecret(id, accountId, encrypted);
+  if (!ok) return res.status(404).json({ error: 'endpoint introuvable ou inactif' });
+  return res.json({ ok: true, secret, warning: 'Nouveau secret généré. Il ne sera plus affiché.' });
 });

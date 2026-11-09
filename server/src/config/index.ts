@@ -1,13 +1,19 @@
 const isProd = process.env.NODE_ENV === 'production';
 
+function parseOrigins(raw?: string): string[] {
+  if (!raw) return isProd ? [] : ['http://localhost:5173', 'capacitor://localhost', 'tauri://localhost'];
+  return raw.split(',').map((s) => s.trim()).filter(Boolean);
+}
+
 export const config = {
   port: Number(process.env.PORT ?? 4000),
   isProd,
+  allowedOrigins: parseOrigins(process.env.ALLOWED_ORIGINS),
 };
 
 /**
- * Secret de vérification des webhooks d'un connecteur.
- * MVP : variables d'environnement. Plus tard : secret par compte, stocké chiffré en base.
+ * Secret de vérification des webhooks d'un connecteur (mode legacy env).
+ * Préférer les secrets par endpoint (chiffrés en BDD) via /webhooks/w/:path_token.
  */
 export function secretFor(connectorId: string): string | undefined {
   const fromEnv: Record<string, string | undefined> = {

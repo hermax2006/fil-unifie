@@ -106,6 +106,22 @@ export function Connections({ user }: { user?: User }) {
     loadEndpoints();
   }
 
+  async function rotate(id: string) {
+    const res = await fetch(`/api/connections/webhook/endpoints/${id}/rotate-secret`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ accountId }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      setResult({ ...data, url: '(URL inchangée, secret remplacé)', warning: data.warning });
+      setTestResult(null);
+    } else {
+      setError(data.error || 'Erreur rotation');
+    }
+  }
+
   return (
     <div className="connections">
       <h2>Gérer les connexions</h2>
@@ -169,7 +185,12 @@ export function Connections({ user }: { user?: User }) {
                 <strong>{ep.connectorId}</strong> <span className="badge">{ep.active ? 'actif' : 'révoqué'}</span>
                 <code className="value">{ep.url}</code>
               </div>
-              {ep.active && <button className="btn small danger" onClick={() => revoke(ep.id)}>Révoquer</button>}
+              {ep.active && (
+                <div className="result-actions">
+                  <button className="btn small" onClick={() => rotate(ep.id)}>Nouveau secret</button>
+                  <button className="btn small danger" onClick={() => revoke(ep.id)}>Révoquer</button>
+                </div>
+              )}
             </li>
           ))}
         </ul>

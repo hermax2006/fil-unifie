@@ -56,3 +56,12 @@ export function revokeEndpoint(id: string, accountId: string): boolean {
   const info = db.prepare('UPDATE webhook_endpoints SET active = 0, updated_at = datetime(\'now\') WHERE id = ? AND account_id = ?').run(id, accountId);
   return info.changes > 0;
 }
+
+export function rotateEndpointSecret(id: string, accountId: string, secretEncrypted: string): boolean {
+  const info = db.prepare(`
+    UPDATE webhook_endpoints
+    SET secret_encrypted = ?, updated_at = datetime('now')
+    WHERE id = ? AND account_id = ? AND active = 1
+  `).run(secretEncrypted, id, accountId);
+  return info.changes > 0;
+}
