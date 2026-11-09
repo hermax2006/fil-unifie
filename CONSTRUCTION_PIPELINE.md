@@ -211,5 +211,5 @@ Pour avancer concrètement dans l'immédiat:
 - [x] CRUD endpoints (génération/liste/révocation) + UI "Connexions"
 - [x] Ancien routeur `/webhooks/:connector/:accountId` : dev only, 410 en prod
 - [x] Slack HMAC vérifié avec `rawBody` + timestamp anti-rejeu (OK pour secret déchiffré)
+- [x] Tests Vitest : `verifyWebhook` (webhook/telegram/slack), handshake Slack, normalisation, `dedup_key`
 - [ ] Rotation de secret / hash `path_token` (optionnel selon politique)
-- [ ] Tests automatisés verifyWebhook (Slack/Telegram/webhook)
