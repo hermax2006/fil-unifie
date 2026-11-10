@@ -90,6 +90,17 @@ export function Feed() {
               </div>
               {e.title && <div className="event-title">{e.title}</div>}
               <div className="event-body">{e.body}</div>
+              {e.attachments && e.attachments.length > 0 && (
+                <div className="event-attachments">
+                  <span className="attachment-label">Pièces jointes :</span>
+                  {e.attachments.map((a, i) => (
+                    <span className="attachment" key={`${a.filename}-${i}`}>
+                      {a.filename}
+                      {a.size ? ` (${Math.max(1, Math.round(a.size / 1024))} Ko)` : ''}
+                    </span>
+                  ))}
+                </div>
+              )}
               <div className="event-footer">
                 {e.author?.name && <span className="event-author">— {e.author.name}</span>}
                 {e.url && <a className="event-link" href={e.url} target="_blank" rel="noreferrer">Ouvrir</a>}

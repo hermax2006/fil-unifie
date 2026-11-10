@@ -1,6 +1,6 @@
 import { db } from '../client.js';
 import type { UnifiedEvent } from '@fil/shared';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 export function makeDedupKey(e: UnifiedEvent): string {
   const base = [
@@ -22,7 +22,11 @@ export function addEventRow(e: UnifiedEvent & { userId?: string | null; dedupKey
       id, user_id, account_id, connector_id, external_id, dedup_key, kind, author_json, title, body, url, occurred_at, received_at, read_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
-  try {
+  const attachmentStmt = db.prepare(`
+    INSERT INTO event_attachments (id, event_id, filename, content_type, size)
+    VALUES (?, ?, ?, ?, ?)
+  `);
+  const insert = db.transaction(() => {
     stmt.run(
       e.id,
       e.userId ?? null,
@@ -39,6 +43,13 @@ export function addEventRow(e: UnifiedEvent & { userId?: string | null; dedupKey
       e.receivedAt,
       e.readAt ?? null,
     );
+    for (const a of e.attachments ?? []) {
+      attachmentStmt.run(randomUUID(), e.id, a.filename, a.contentType ?? null, a.size ?? null);
+    }
+  });
+
+  try {
+    insert();
     return true;
   } catch (err: any) {
     if (err?.code === 'SQLITE_CONSTRAINT_UNIQUE') {
@@ -84,6 +95,27 @@ export function listEvents(limit = 100, userId?: string, filters: EventFilters =
   params.push(limit);
   const rows = stmt.all(...params) as any[];
 
+  const attachmentsByEvent = new Map<string, { filename: string; contentType?: string; size?: number }[]>();
+  if (rows.length > 0) {
+    const placeholders = rows.map(() => '?').join(',');
+    const attachments = db.prepare(`
+      SELECT event_id as eventId, filename, content_type as contentType, size
+      FROM event_attachments
+      WHERE event_id IN (${placeholders})
+      ORDER BY rowid ASC
+    `).all(...rows.map((r) => r.id)) as { eventId: string; filename: string; contentType: string | null; size: number | null }[];
+
+    for (const a of attachments) {
+      const list = attachmentsByEvent.get(a.eventId) ?? [];
+      list.push({
+        filename: a.filename,
+        contentType: a.contentType ?? undefined,
+        size: a.size ?? undefined,
+      });
+      attachmentsByEvent.set(a.eventId, list);
+    }
+  }
+
   return rows.map((r) => ({
     id: r.id,
     connector: r.connector,
@@ -94,6 +126,7 @@ export function listEvents(limit = 100, userId?: string, filters: EventFilters =
     title: r.title ?? undefined,
     body: r.body,
     url: r.url ?? undefined,
+    attachments: attachmentsByEvent.get(r.id),
     occurredAt: r.occurredAt,
     receivedAt: r.receivedAt,
     readAt: r.readAt ?? undefined,

@@ -2,6 +2,13 @@
 
 export type EventKind = 'message' | 'mention' | 'notification' | 'task' | 'other';
 
+/** Métadonnées d'une pièce jointe (le contenu n'est pas stocké dans le fil). */
+export interface EventAttachment {
+  filename: string;
+  contentType?: string;
+  size?: number;
+}
+
 /** Format commun : chaque app est transformée en ceci avant d'entrer dans le fil. */
 export interface UnifiedEvent {
   id: string;
@@ -13,6 +20,7 @@ export interface UnifiedEvent {
   title?: string;
   body: string;
   url?: string;
+  attachments?: EventAttachment[];
   occurredAt: string;         // ISO : quand c'est arrivé dans l'app source
   receivedAt: string;         // ISO : quand le fil l'a reçu
   readAt?: string;            // ISO : quand l'utilisateur a lu l'événement

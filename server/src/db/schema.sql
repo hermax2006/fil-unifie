@@ -77,6 +77,18 @@ CREATE INDEX IF NOT EXISTS idx_events_account ON events(account_id);
 CREATE INDEX IF NOT EXISTS idx_events_user ON events(user_id);
 CREATE INDEX IF NOT EXISTS idx_events_dedup ON events(dedup_key);
 
+-- Métadonnées de pièces jointes (pas le contenu binaire)
+CREATE TABLE IF NOT EXISTS event_attachments (
+  id TEXT PRIMARY KEY,
+  event_id TEXT NOT NULL,
+  filename TEXT NOT NULL,
+  content_type TEXT,
+  size INTEGER,
+  FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_event_attachments_event ON event_attachments(event_id);
+
 CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,

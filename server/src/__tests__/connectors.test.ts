@@ -26,6 +26,21 @@ describe('WebhookConnector', () => {
     expect(ev[0].body).toBe('hi');
     expect(ev[0].author?.name).toBe('me');
   });
+  it('normalise les métadonnées de pièces jointes', () => {
+    const ev = c.normalize(wr({}, {
+      body: 'avec pièce jointe',
+      attachments: [
+        { filename: 'a.pdf', contentType: 'application/pdf', size: 1234 },
+        { filename: 'b.png' },
+        { size: 10 },
+      ],
+    }), 'acc');
+    expect(ev[0].attachments).toEqual([
+      { filename: 'a.pdf', contentType: 'application/pdf', size: 1234 },
+      { filename: 'b.png', contentType: undefined, size: undefined },
+      { filename: 'pièce jointe', contentType: undefined, size: 10 },
+    ]);
+  });
 });
 
 describe('TelegramConnector', () => {

@@ -253,3 +253,20 @@ Pour avancer concrètement dans l'immédiat:
 - [x] Arrêt propre sur SIGINT/SIGTERM (`stopPoller`, `stopQueue`)
 - [x] Redis local installé et testé (smoke test : webhook -> BullMQ -> SQLite/SSE)
 - [ ] Supervision des files (Bull Board), DLQ dédiée, Redis managé en production
+
+## IMAP multi-dossiers + pièces jointes (fait)
+- [x] `config.mailboxes[]` (UI : dossiers séparés par des virgules), repli sur `mailbox`/INBOX
+- [x] Parcours de chaque dossier avec verrou IMAP indépendant
+- [x] Métadonnées de pièces jointes (`filename`, `contentType`, `size`), contenu non stocké
+- [x] Table `event_attachments` (migration v4), insertion transactionnelle avec l'événement
+- [x] API events : pièces jointes renvoyées avec chaque événement
+- [x] UI Fil : affichage des pièces jointes et de leur taille
+- [x] Webhook générique : accepte `attachments[]` (utile pour tests/intégrations)
+- [ ] Téléchargement des pièces jointes, OAuth Gmail/Outlook, envoi de réponses
+
+## Bull Board + DLQ (fait)
+- [x] Dashboard `/admin/queues` (`@bull-board/express`) pour la file principale et la DLQ
+- [x] Basic auth via `QUEUE_ADMIN_USER` / `QUEUE_ADMIN_PASS` (obligatoire en prod)
+- [x] File `fil-events-dlq` : les jobs épuisés après 5 tentatives y sont copiés
+- [x] `POST /admin/queues/requeue-dlq` pour remettre les dead letters dans la file principale
+- [ ] Alerting sur DLQ, purge automatique, Redis managé en production

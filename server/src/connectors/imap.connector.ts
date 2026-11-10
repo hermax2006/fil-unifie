@@ -1,4 +1,4 @@
-import type { NewEvent } from '@fil/shared';
+import type { EventAttachment, NewEvent } from '@fil/shared';
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import { BaseConnector, type PollContext, type PollResult, type WebhookRequest } from './base.connector.js';
@@ -18,14 +18,22 @@ function toIso(value: string | Date | undefined): string | undefined {
   return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
 }
 
+function mailboxesFrom(config: Record<string, unknown>): string[] {
+  const list = Array.isArray(config.mailboxes)
+    ? config.mailboxes.map(asString).filter((m): m is string => !!m)
+    : [];
+  if (list.length > 0) return list;
+  return [asString(config.mailbox) ?? 'INBOX'];
+}
+
 /**
  * Connecteur IMAP.
- * - config (non sensible) : host, port, secure, user, mailbox
+ * - config (non sensible) : host, port, secure, user, mailbox ou mailboxes[]
  * - tokens (chiffrés en BDD) : pass (mot de passe ou mot de passe d'application)
  *
- * On interroge INBOX (ou config.mailbox) depuis la dernière synchronisation,
- * puis on convertit chaque message en événement du fil. Les doublons sont
- * éliminés par dedup_key (Message-ID).
+ * On interroge chaque dossier depuis la dernière synchronisation, puis on
+ * convertit les messages en événements. Les doublons sont éliminés par
+ * dedup_key (Message-ID). Seules les métadonnées des pièces jointes sont gardées.
  */
 export class ImapConnector extends BaseConnector {
   readonly info = {
@@ -51,7 +59,7 @@ export class ImapConnector extends BaseConnector {
 
     const port = asNumber(ctx.config.port, 993);
     const secure = ctx.config.secure !== false;
-    const mailbox = asString(ctx.config.mailbox) ?? 'INBOX';
+    const mailboxes = mailboxesFrom(ctx.config);
     const now = new Date().toISOString();
 
     // IMAP ne filtre qu'à la journée : on prend une marge d'un jour.
@@ -72,47 +80,70 @@ export class ImapConnector extends BaseConnector {
     const events: NewEvent[] = [];
     try {
       await client.connect();
-      const lock = await client.getMailboxLock(mailbox);
-      try {
-        for await (const message of client.fetch(
-          { since },
-          { envelope: true, source: true, internalDate: true, uid: true },
-          { uid: true },
-        )) {
-          if (events.length >= 20) break;
-          const envelope = message.envelope;
-          const subject = asString(envelope?.subject) ?? '(sans objet)';
-          const from = envelope?.from?.[0];
-          let body = subject;
 
-          if (message.source) {
-            try {
-              const parsed = await simpleParser(message.source);
-              const htmlText = typeof parsed.html === 'string' ? parsed.html.replace(/<[^>]*>/g, ' ') : undefined;
-              body = asString(parsed.text) ?? asString(htmlText) ?? subject;
-            } catch {
-              // Message MIME illisible : on garde l'objet comme corps.
-            }
-          }
+      for (const mailbox of mailboxes) {
+        if (events.length >= 20) break;
 
-          const occurredAt =
-            toIso(message.internalDate) ??
-            toIso(envelope?.date) ??
-            now;
-
-          events.push({
-            connector: this.info.id,
-            accountId: ctx.accountId,
-            externalId: asString(envelope?.messageId) ?? `uid:${message.uid}`,
-            kind: 'message',
-            author: from ? { id: from.address, name: from.name || from.address || 'inconnu' } : undefined,
-            title: subject,
-            body: body.slice(0, 20000),
-            occurredAt,
-          });
+        let lock;
+        try {
+          lock = await client.getMailboxLock(mailbox);
+        } catch (err) {
+          console.error(`IMAP: dossier "${mailbox}" inaccessible`, err);
+          continue;
         }
-      } finally {
-        lock.release();
+
+        try {
+          for await (const message of client.fetch(
+            { since },
+            { envelope: true, source: true, internalDate: true, uid: true },
+            { uid: true },
+          )) {
+            if (events.length >= 20) break;
+
+            const envelope = message.envelope;
+            const subject = asString(envelope?.subject) ?? '(sans objet)';
+            const from = envelope?.from?.[0];
+            let body = subject;
+            let attachments: EventAttachment[] | undefined;
+
+            if (message.source) {
+              try {
+                const parsed = await simpleParser(message.source);
+                const htmlText = typeof parsed.html === 'string' ? parsed.html.replace(/<[^>]*>/g, ' ') : undefined;
+                body = asString(parsed.text) ?? asString(htmlText) ?? subject;
+                const list = (parsed.attachments ?? [])
+                  .slice(0, 20)
+                  .map((a) => ({
+                    filename: a.filename || 'pièce jointe',
+                    contentType: a.contentType || undefined,
+                    size: a.size || undefined,
+                  }));
+                if (list.length > 0) attachments = list;
+              } catch {
+                // Message MIME illisible : on garde l'objet comme corps.
+              }
+            }
+
+            const occurredAt =
+              toIso(message.internalDate) ??
+              toIso(envelope?.date) ??
+              now;
+
+            events.push({
+              connector: this.info.id,
+              accountId: ctx.accountId,
+              externalId: asString(envelope?.messageId) ?? `uid:${message.uid}`,
+              kind: 'message',
+              author: from ? { id: from.address, name: from.name || from.address || 'inconnu' } : undefined,
+              title: subject,
+              body: body.slice(0, 20000),
+              attachments,
+              occurredAt,
+            });
+          }
+        } finally {
+          lock.release();
+        }
       }
     } finally {
       try {

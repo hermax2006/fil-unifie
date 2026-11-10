@@ -36,6 +36,7 @@ export function Connections({ user }: { user?: User }) {
   const [connPort, setConnPort] = useState('993');
   const [connUser, setConnUser] = useState('');
   const [connPass, setConnPass] = useState('');
+  const [connMailboxes, setConnMailboxes] = useState('INBOX');
   const [connSaving, setConnSaving] = useState(false);
   const [connError, setConnError] = useState<string | null>(null);
 
@@ -73,11 +74,13 @@ export function Connections({ user }: { user?: User }) {
       }
       if (connConnectorId === 'imap') {
         if (!connHost.trim() || !connUser.trim()) throw new Error('Hôte et utilisateur IMAP requis');
+        const mailboxes = connMailboxes.split(',').map((m) => m.trim()).filter(Boolean);
         config = {
           host: connHost.trim(),
           port: Number(connPort) || 993,
           secure: true,
           user: connUser.trim(),
+          mailboxes: mailboxes.length > 0 ? mailboxes : ['INBOX'],
         };
       }
 
@@ -105,6 +108,7 @@ export function Connections({ user }: { user?: User }) {
       setConnHost('');
       setConnUser('');
       setConnPass('');
+      setConnMailboxes('INBOX');
       loadConnections();
     } catch (e: any) {
       setConnError(e.message);
@@ -325,6 +329,10 @@ export function Connections({ user }: { user?: User }) {
             <label>
               Utilisateur
               <input value={connUser} onChange={(e) => setConnUser(e.target.value)} placeholder="moi@example.com" />
+            </label>
+            <label>
+              Dossiers (séparés par des virgules)
+              <input value={connMailboxes} onChange={(e) => setConnMailboxes(e.target.value)} placeholder="INBOX, Archives" />
             </label>
             <label>
               Mot de passe d'application

@@ -363,3 +363,7 @@ header {
 .event.unread { border-color: rgba(157,180,255,0.35); }
 .event.read { opacity: 0.75; }
 .event-footer { display: flex; gap: 0.8rem; align-items: center; flex-wrap: wrap; }
+
+.event-attachments { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin: 0.3rem 0 0.1rem; }
+.attachment-label { font-size: 0.8rem; color: rgba(244,244,249,0.6); }
+.attachment { font-size: 0.8rem; padding: 0.15rem 0.45rem; border-radius: 999px; background: rgba(157,180,255,0.12); border: 1px solid rgba(157,180,255,0.25); }

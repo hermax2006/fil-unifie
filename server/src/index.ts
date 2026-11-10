@@ -9,6 +9,7 @@ import { connectionsRouter } from './routes/connections.js';
 import { migrate } from './db/client.js';
 import { startPoller, stopPoller } from './queues/poller.js';
 import { startQueue, stopQueue } from './queues/index.js';
+import { mountQueueDashboard } from './queues/dashboard.js';
 
 migrate();
 
@@ -35,6 +36,7 @@ app.use('/auth', authRouter);
 app.use('/api/connections', connectionsRouter);
 app.use('/api', apiRouter);
 app.use('/webhooks', webhooksRouter);
+mountQueueDashboard(app);
 
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   if (err?.message?.startsWith('CORS:')) return res.status(403).json({ error: err.message });

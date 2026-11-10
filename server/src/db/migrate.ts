@@ -64,5 +64,23 @@ export function migrate() {
       CREATE INDEX IF NOT EXISTS idx_sync_runs_connection ON sync_runs(connection_id, started_at DESC);
     `);
     setVersion(3);
+    current = 3;
+  }
+
+  // v4: métadonnées de pièces jointes
+  if (current < 4) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS event_attachments (
+        id TEXT PRIMARY KEY,
+        event_id TEXT NOT NULL,
+        filename TEXT NOT NULL,
+        content_type TEXT,
+        size INTEGER,
+        FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_event_attachments_event ON event_attachments(event_id);
+    `);
+    setVersion(4);
   }
 }
