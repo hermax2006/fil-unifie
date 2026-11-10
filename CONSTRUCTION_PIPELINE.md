@@ -270,3 +270,12 @@ Pour avancer concrètement dans l'immédiat:
 - [x] File `fil-events-dlq` : les jobs épuisés après 5 tentatives y sont copiés
 - [x] `POST /admin/queues/requeue-dlq` pour remettre les dead letters dans la file principale
 - [ ] Alerting sur DLQ, purge automatique, Redis managé en production
+
+## Sécurité des endpoints (fait)
+- [x] `path_token` haché SHA-256 (migration v5) : le jeton brut n'est plus stocké
+- [x] Recherche d'endpoint par hash, URL non réaffichable depuis la liste
+- [x] Rotation URL + secret (`POST /webhook/endpoints/:id/rotate`), ancienne URL invalide
+- [x] Rate limiting HTTP : auth 20/15 min, webhooks 600/min, API 300/min
+- [x] `trust proxy` en production, désactivation possible via `RATE_LIMIT_DISABLED`
+- [x] Bouton "Tester" IMAP : vérifie connexion + dossiers sans polling ni écriture
+- [ ] Hash des secrets webhook impossible (HMAC Slack), ils restent chiffrés AES-GCM

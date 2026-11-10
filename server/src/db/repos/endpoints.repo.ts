@@ -1,11 +1,13 @@
 import { db } from '../client.js';
 import { randomBytes } from 'node:crypto';
+import { generatePathToken, hashPathToken } from '../../webhooks/path-token.js';
 
 export interface WebhookEndpointRow {
   id: string;
   account_id: string;
   connector_id: string;
   path_token: string;
+  path_token_hash: string | null;
   secret_encrypted: string | null;
   secret_hash: string | null;
   active: number;
@@ -25,27 +27,29 @@ export function createEndpoint(accountId: string, connectorId: string, secretEnc
   }
 
   const id = randomBytes(16).toString('hex');
-  const pathToken = randomBytes(24).toString('hex');
+  const rawToken = generatePathToken();
+  const tokenHash = hashPathToken(rawToken);
   const stmt = db.prepare(`
-    INSERT INTO webhook_endpoints (id, account_id, connector_id, path_token, secret_encrypted, secret_hash, active, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, NULL, 1, datetime('now'), datetime('now'))
+    INSERT INTO webhook_endpoints (id, account_id, connector_id, path_token, path_token_hash, secret_encrypted, secret_hash, active, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, NULL, 1, datetime('now'), datetime('now'))
   `);
-  stmt.run(id, accountId, connectorId, pathToken, secretEncrypted ?? null);
-  return { id, pathToken };
+  // path_token ne contient que l'empreinte (legacy), jamais le jeton secret.
+  stmt.run(id, accountId, connectorId, tokenHash, tokenHash, secretEncrypted ?? null);
+  return { id, pathToken: rawToken };
 }
 
 export function findByPathToken(pathToken: string): WebhookEndpointRow | undefined {
   const stmt = db.prepare(`
-    SELECT id, account_id, connector_id, path_token, secret_encrypted, secret_hash, active
+    SELECT id, account_id, connector_id, path_token, path_token_hash, secret_encrypted, secret_hash, active
     FROM webhook_endpoints
-    WHERE path_token = ? AND active = 1
+    WHERE path_token_hash = ? AND active = 1
   `);
-  return stmt.get(pathToken) as WebhookEndpointRow | undefined;
+  return stmt.get(hashPathToken(pathToken)) as WebhookEndpointRow | undefined;
 }
 
 export function listEndpointsForAccount(accountId: string) {
   return db.prepare(`
-    SELECT id, account_id, connector_id, path_token, active, created_at, updated_at
+    SELECT id, account_id, connector_id, active, created_at, updated_at
     FROM webhook_endpoints
     WHERE account_id = ?
     ORDER BY created_at DESC
@@ -63,5 +67,15 @@ export function rotateEndpointSecret(id: string, accountId: string, secretEncryp
     SET secret_encrypted = ?, updated_at = datetime('now')
     WHERE id = ? AND account_id = ? AND active = 1
   `).run(secretEncrypted, id, accountId);
+  return info.changes > 0;
+}
+
+/** Remplace l'URL (jeton) d'un endpoint ; l'ancienne URL devient invalide. */
+export function rotateEndpointToken(id: string, accountId: string, tokenHash: string): boolean {
+  const info = db.prepare(`
+    UPDATE webhook_endpoints
+    SET path_token = ?, path_token_hash = ?, updated_at = datetime('now')
+    WHERE id = ? AND account_id = ? AND active = 1
+  `).run(tokenHash, tokenHash, id, accountId);
   return info.changes > 0;
 }

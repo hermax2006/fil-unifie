@@ -75,3 +75,8 @@ export function updateConnection(
   const info = db.prepare(`UPDATE connector_connections SET ${fields.join(', ')} WHERE id = ? AND account_id = ?`).run(...params);
   return info.changes > 0;
 }
+
+export function getConnection(id: string, accountId: string): ConnectorConnectionRow | undefined {
+  return db.prepare('SELECT * FROM connector_connections WHERE id = ? AND account_id = ?')
+    .get(id, accountId) as ConnectorConnectionRow | undefined;
+}

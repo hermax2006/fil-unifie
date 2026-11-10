@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 
 type User = { id: string; email: string; accountId?: string } | null;
-type Endpoint = { id: string; connectorId: string; url: string; active: boolean; createdAt: string };
+type Endpoint = { id: string; connectorId: string; url: string | null; active: boolean; createdAt: string };
 type ConnectorConnection = {
   id: string;
   connectorId: string;
@@ -39,6 +39,8 @@ export function Connections({ user }: { user?: User }) {
   const [connMailboxes, setConnMailboxes] = useState('INBOX');
   const [connSaving, setConnSaving] = useState(false);
   const [connError, setConnError] = useState<string | null>(null);
+  const [connTestingId, setConnTestingId] = useState<string | null>(null);
+  const [connTestResults, setConnTestResults] = useState<Record<string, string>>({});
 
   async function loadEndpoints() {
     try {
@@ -125,6 +127,29 @@ export function Connections({ user }: { user?: User }) {
       body: JSON.stringify({ active, accountId }),
     });
     loadConnections();
+  }
+
+  async function testConnection(id: string) {
+    setConnTestingId(id);
+    setConnTestResults((prev) => ({ ...prev, [id]: 'Test en cours...' }));
+    try {
+      const res = await fetch(`/api/connections/connector-connections/${id}/test`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ accountId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `Erreur ${res.status}`);
+      const result = data.result as { mailboxes?: string[]; missing?: string[] };
+      const missing = result.missing?.length ? ` — dossiers absents : ${result.missing.join(', ')}` : '';
+      const count = result.mailboxes?.length ? `${result.mailboxes.length} dossier(s)` : 'connexion OK';
+      setConnTestResults((prev) => ({ ...prev, [id]: `OK : ${count}${missing}` }));
+    } catch (e: any) {
+      setConnTestResults((prev) => ({ ...prev, [id]: `Erreur : ${e.message}` }));
+    } finally {
+      setConnTestingId(null);
+    }
   }
 
   async function generate() {
@@ -215,6 +240,23 @@ export function Connections({ user }: { user?: User }) {
     }
   }
 
+  async function regenerate(id: string) {
+    const res = await fetch(`/api/connections/webhook/endpoints/${id}/rotate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ accountId }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      setResult(data);
+      setTestResult(null);
+      loadEndpoints();
+    } else {
+      setError(data.error || 'Erreur régénération');
+    }
+  }
+
   return (
     <div className="connections">
       <h2>Gérer les connexions</h2>
@@ -276,10 +318,15 @@ export function Connections({ user }: { user?: User }) {
             <li key={ep.id} className={`endpoint ${ep.active ? '' : 'revoked'}`}>
               <div>
                 <strong>{ep.connectorId}</strong> <span className="badge">{ep.active ? 'actif' : 'révoqué'}</span>
-                <code className="value">{ep.url}</code>
+                {ep.url ? (
+                  <code className="value">{ep.url}</code>
+                ) : (
+                  <span className="value">URL masquée (jeton haché) — régénérer pour obtenir une nouvelle URL.</span>
+                )}
               </div>
               {ep.active && (
                 <div className="result-actions">
+                  <button className="btn small" onClick={() => regenerate(ep.id)}>Régénérer URL + secret</button>
                   <button className="btn small" onClick={() => rotate(ep.id)}>Nouveau secret</button>
                   <button className="btn small danger" onClick={() => revoke(ep.id)}>Révoquer</button>
                 </div>
@@ -368,8 +415,18 @@ export function Connections({ user }: { user?: User }) {
                     <span className="error small"> — échec : {c.lastRun.error}</span>
                   )}
                 </span>
+                {connTestResults[c.id] && (
+                  <span className={connTestResults[c.id].startsWith('OK') ? 'success small' : 'error small'}>
+                    {connTestResults[c.id]}
+                  </span>
+                )}
               </div>
               <div className="result-actions">
+                {c.connectorId === 'imap' && (
+                  <button className="btn small" onClick={() => testConnection(c.id)} disabled={connTestingId === c.id}>
+                    {connTestingId === c.id ? 'Test...' : 'Tester'}
+                  </button>
+                )}
                 <button className="btn small" onClick={() => toggleConnection(c.id, !c.active)}>
                   {c.active ? 'Mettre en pause' : 'Réactiver'}
                 </button>

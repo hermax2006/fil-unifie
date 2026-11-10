@@ -10,10 +10,12 @@ import { migrate } from './db/client.js';
 import { startPoller, stopPoller } from './queues/poller.js';
 import { startQueue, stopQueue } from './queues/index.js';
 import { mountQueueDashboard } from './queues/dashboard.js';
+import { webhookLimiter, apiLimiter } from './middleware/rate-limit.js';
 
 migrate();
 
 const app = express();
+if (config.isProd) app.set('trust proxy', 1);
 
 app.use(cors({
   origin(origin, cb) {
@@ -33,9 +35,9 @@ app.use(express.json({
 app.use(cookieParser());
 
 app.use('/auth', authRouter);
-app.use('/api/connections', connectionsRouter);
-app.use('/api', apiRouter);
-app.use('/webhooks', webhooksRouter);
+app.use('/api/connections', apiLimiter, connectionsRouter);
+app.use('/api', apiLimiter, apiRouter);
+app.use('/webhooks', webhookLimiter, webhooksRouter);
 mountQueueDashboard(app);
 
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

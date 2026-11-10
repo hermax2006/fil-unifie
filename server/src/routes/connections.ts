@@ -1,14 +1,15 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { requireAuth, attachUser, type AuthRequest } from '../auth/middleware.js';
-import { createEndpoint, listEndpointsForAccount, revokeEndpoint, rotateEndpointSecret } from '../db/repos/endpoints.repo.js';
+import { createEndpoint, listEndpointsForAccount, revokeEndpoint, rotateEndpointSecret, rotateEndpointToken } from '../db/repos/endpoints.repo.js';
+import { generatePathToken, hashPathToken } from '../webhooks/path-token.js';
 import { generateWebhookSecret, encryptWebhookSecret } from '../webhooks/secret-manager.js';
 import { findOrCreateAccountForUser } from '../db/repos/accounts.repo.js';
 import { validateBody } from '../utils/validate.js';
 import { registry } from '../connectors/registry.js';
-import { updateConnection, setConnectionTokens } from '../db/repos/connections.repo.js';
+import { updateConnection, setConnectionTokens, getConnection } from '../db/repos/connections.repo.js';
 import { getSyncState, getLatestSyncRun } from '../db/repos/sync.repo.js';
-import { encryptToken } from '../crypto/tokens.js';
+import { encryptToken, decryptToken } from '../crypto/tokens.js';
 
 export const connectionsRouter = Router();
 
@@ -26,8 +27,8 @@ connectionsRouter.get('/webhook/endpoints', isProd ? requireAuth : attachUser, (
   const rows = listEndpointsForAccount(accountId).map((r: any) => ({
     id: r.id,
     connectorId: r.connector_id,
-    url: `${req.protocol}://${req.get('host')}/webhooks/w/${r.path_token}`,
-    pathToken: r.path_token,
+    // Le jeton d'URL est haché : impossible de réafficher l'ancienne URL.
+    url: null,
     active: !!r.active,
     createdAt: r.created_at,
   }));
@@ -140,4 +141,63 @@ connectionsRouter.put('/connector-connections/:id/tokens', isProd ? requireAuth 
   const ok = setConnectionTokens(id, accountId, encrypted);
   if (!ok) return res.status(404).json({ error: 'connexion introuvable' });
   return res.json({ ok: true });
+});
+
+// Régénère URL + secret d'un endpoint (l'ancienne URL et l'ancien secret sont invalidés).
+connectionsRouter.post('/webhook/endpoints/:id/rotate', isProd ? requireAuth : attachUser, (req: AuthRequest, res) => {
+  const accountId = resolveAccountId(req, req.body?.accountId);
+  if (!accountId) return res.status(400).json({ error: 'accountId requis' });
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+  const rawToken = generatePathToken();
+  const tokenHash = hashPathToken(rawToken);
+  if (!rotateEndpointToken(id, accountId, tokenHash)) {
+    return res.status(404).json({ error: 'endpoint introuvable ou inactif' });
+  }
+
+  const secret = generateWebhookSecret();
+  rotateEndpointSecret(id, accountId, encryptWebhookSecret(secret));
+
+  const url = `${req.protocol}://${req.get('host')}/webhooks/w/${rawToken}`;
+  return res.json({
+    ok: true,
+    url,
+    pathToken: rawToken,
+    secret,
+    warning: 'Nouvelle URL et nouveau secret générés. Les anciens sont invalides.',
+  });
+});
+
+// Teste la connexion/config sans polling ni écriture d'événements (ex. IMAP).
+connectionsRouter.post('/connector-connections/:id/test', isProd ? requireAuth : attachUser, async (req: AuthRequest, res) => {
+  const accountId = resolveAccountId(req, req.body?.accountId);
+  if (!accountId) return res.status(400).json({ error: 'accountId requis' });
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+  const row = getConnection(id, accountId);
+  if (!row) return res.status(404).json({ error: 'connexion introuvable' });
+
+  const connector = registry.get(row.connector_id);
+  if (!connector?.test) return res.status(400).json({ error: 'test non supporté pour ce connecteur' });
+
+  let config: Record<string, unknown> = {};
+  if (row.config_json) {
+    try { config = JSON.parse(row.config_json); } catch { config = {}; }
+  }
+
+  let tokens: Record<string, unknown> | null = null;
+  if (row.encrypted_tokens_json) {
+    try {
+      tokens = JSON.parse(decryptToken(row.encrypted_tokens_json)) as Record<string, unknown>;
+    } catch {
+      return res.status(500).json({ error: 'tokens illisibles (clé de chiffrement ?)' });
+    }
+  }
+
+  try {
+    const result = await connector.test({ accountId, config, tokens });
+    return res.json({ ok: true, result });
+  } catch (err) {
+    return res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+  }
 });

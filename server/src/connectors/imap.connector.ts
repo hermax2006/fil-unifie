@@ -26,6 +26,33 @@ function mailboxesFrom(config: Record<string, unknown>): string[] {
   return [asString(config.mailbox) ?? 'INBOX'];
 }
 
+function connectionFrom(ctx: PollContext) {
+  const host = asString(ctx.config.host);
+  const user = asString(ctx.config.user);
+  const pass = asString(ctx.tokens?.pass);
+  if (!host) throw new Error('IMAP: config.host requis');
+  if (!user) throw new Error('IMAP: config.user requis');
+  if (!pass) throw new Error('IMAP: tokens.pass requis (mot de passe d\'application)');
+  return {
+    host,
+    user,
+    pass,
+    port: asNumber(ctx.config.port, 993),
+    secure: ctx.config.secure !== false,
+  };
+}
+
+function makeClient(info: ReturnType<typeof connectionFrom>): ImapFlow {
+  return new ImapFlow({
+    host: info.host,
+    port: info.port,
+    secure: info.secure,
+    auth: { user: info.user, pass: info.pass },
+    logger: false,
+    socketTimeout: 30000,
+  });
+}
+
 /**
  * Connecteur IMAP.
  * - config (non sensible) : host, port, secure, user, mailbox ou mailboxes[]
@@ -49,16 +76,27 @@ export class ImapConnector extends BaseConnector {
     return [];
   }
 
-  async poll(ctx: PollContext): Promise<PollResult> {
-    const host = asString(ctx.config.host);
-    const user = asString(ctx.config.user);
-    const pass = asString(ctx.tokens?.pass);
-    if (!host) throw new Error('IMAP: config.host requis');
-    if (!user) throw new Error('IMAP: config.user requis');
-    if (!pass) throw new Error('IMAP: tokens.pass requis (mot de passe d\'application)');
+  async test(ctx: PollContext): Promise<Record<string, unknown>> {
+    const info = connectionFrom(ctx);
+    const configured = mailboxesFrom(ctx.config);
+    const client = makeClient(info);
+    try {
+      await client.connect();
+      const list = await client.list();
+      const mailboxes = list.map((m) => m.path);
+      const missing = configured.filter((m) => !mailboxes.includes(m));
+      return { ok: true, configured, mailboxes, missing };
+    } finally {
+      try {
+        await client.logout();
+      } catch {
+        // Connexion déjà fermée.
+      }
+    }
+  }
 
-    const port = asNumber(ctx.config.port, 993);
-    const secure = ctx.config.secure !== false;
+  async poll(ctx: PollContext): Promise<PollResult> {
+    const info = connectionFrom(ctx);
     const mailboxes = mailboxesFrom(ctx.config);
     const now = new Date().toISOString();
 
@@ -68,14 +106,7 @@ export class ImapConnector extends BaseConnector {
       ? new Date(new Date(ctx.lastPolledAt).getTime() - 24 * 60 * 60 * 1000)
       : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-    const client = new ImapFlow({
-      host,
-      port,
-      secure,
-      auth: { user, pass },
-      logger: false,
-      socketTimeout: 30000,
-    });
+    const client = makeClient(info);
 
     const events: NewEvent[] = [];
     try {

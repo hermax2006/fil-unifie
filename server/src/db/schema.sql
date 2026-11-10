@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS webhook_endpoints (
   account_id TEXT NOT NULL,
   connector_id TEXT NOT NULL,
   path_token TEXT NOT NULL UNIQUE,
+  path_token_hash TEXT,
   secret_encrypted TEXT,
   secret_hash TEXT,
   active INTEGER NOT NULL DEFAULT 1,

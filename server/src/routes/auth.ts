@@ -6,6 +6,7 @@ import { createSession, deleteSession } from '../db/repos/sessions.repo.js';
 import { requireAuth, type AuthRequest } from '../auth/middleware.js';
 import { findOrCreateAccountForUser } from '../db/repos/accounts.repo.js';
 import { validateBody } from '../utils/validate.js';
+import { authLimiter } from '../middleware/rate-limit.js';
 
 export const authRouter = Router();
 
@@ -14,7 +15,7 @@ const authSchema = z.object({
   password: z.string().min(6),
 });
 
-authRouter.post('/register', validateBody(authSchema), async (req, res) => {
+authRouter.post('/register', authLimiter, validateBody(authSchema), async (req, res) => {
   try {
     const { email, password } = (req as any).validatedBody as z.infer<typeof authSchema>;
     if (findUserByEmail(email)) return res.status(409).json({ error: 'cet email est déjà utilisé' });
@@ -34,7 +35,7 @@ authRouter.post('/register', validateBody(authSchema), async (req, res) => {
   }
 });
 
-authRouter.post('/login', validateBody(authSchema), async (req, res) => {
+authRouter.post('/login', authLimiter, validateBody(authSchema), async (req, res) => {
   try {
     const { email, password } = (req as any).validatedBody as z.infer<typeof authSchema>;
     const user = findUserByEmail(email);

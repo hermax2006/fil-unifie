@@ -2,6 +2,7 @@ import { db } from './client.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { hashPathToken } from '../webhooks/path-token.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -82,5 +83,28 @@ export function migrate() {
       CREATE INDEX IF NOT EXISTS idx_event_attachments_event ON event_attachments(event_id);
     `);
     setVersion(4);
+    current = 4;
+  }
+
+  // v5: hash des jetons d'URL webhook (les URL existantes doivent être régénérées)
+  if (current < 5) {
+    try {
+      db.exec('ALTER TABLE webhook_endpoints ADD COLUMN path_token_hash TEXT');
+    } catch (e: any) {
+      if (!String(e?.message || '').includes('duplicate column name')) throw e;
+    }
+    db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_webhook_endpoints_token_hash ON webhook_endpoints(path_token_hash)');
+
+    const rows = db.prepare(`
+      SELECT id, path_token FROM webhook_endpoints
+      WHERE path_token_hash IS NULL OR path_token <> path_token_hash
+    `).all() as { id: string; path_token: string }[];
+    const update = db.prepare('UPDATE webhook_endpoints SET path_token = ?, path_token_hash = ? WHERE id = ?');
+    for (const row of rows) {
+      const hash = hashPathToken(row.path_token);
+      update.run(hash, hash, row.id);
+    }
+
+    setVersion(5);
   }
 }

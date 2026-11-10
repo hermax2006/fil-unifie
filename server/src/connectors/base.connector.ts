@@ -44,6 +44,9 @@ export abstract class BaseConnector {
    */
   poll?(_ctx: PollContext): Promise<PollResult>;
 
+  /** Vérifie la connexion/configuration sans récupérer ni stocker d'événements. */
+  test?(_ctx: PollContext): Promise<unknown>;
+
   // À ajouter plus tard : connect(), reply().
 }
 
