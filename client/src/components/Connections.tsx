@@ -2,6 +2,14 @@ import { useEffect, useState } from 'react';
 
 type User = { id: string; email: string; accountId?: string } | null;
 type Endpoint = { id: string; connectorId: string; url: string; active: boolean; createdAt: string };
+type ConnectorConnection = {
+  id: string;
+  connectorId: string;
+  active: boolean;
+  config: { url?: string } | null;
+  hasTokens: boolean;
+  updatedAt: string;
+};
 
 /**
  * Onglet "Connexions"
@@ -19,6 +27,11 @@ export function Connections({ user }: { user?: User }) {
   const [testLoading, setTestLoading] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
   const [endpoints, setEndpoints] = useState<Endpoint[]>([]);
+  const [connections, setConnections] = useState<ConnectorConnection[]>([]);
+  const [connConnectorId, setConnConnectorId] = useState('rss');
+  const [connConfigUrl, setConnConfigUrl] = useState('');
+  const [connSaving, setConnSaving] = useState(false);
+  const [connError, setConnError] = useState<string | null>(null);
 
   async function loadEndpoints() {
     try {
@@ -29,10 +42,52 @@ export function Connections({ user }: { user?: User }) {
     } catch {}
   }
 
+  async function loadConnections() {
+    try {
+      const q = !user ? `?accountId=${encodeURIComponent(accountId)}` : '';
+      const res = await fetch(`/api/connections/connector-connections${q}`, { credentials: 'include' });
+      if (!res.ok) return;
+      setConnections(await res.json());
+    } catch {}
+  }
+
   useEffect(() => {
     loadEndpoints();
+    loadConnections();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.accountId]);
+
+  async function saveConnection() {
+    setConnSaving(true);
+    setConnError(null);
+    try {
+      const config = connConnectorId === 'rss' && connConfigUrl.trim() ? { url: connConfigUrl.trim() } : undefined;
+      const res = await fetch('/api/connections/connector-connections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ connectorId: connConnectorId, config, accountId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Erreur');
+      setConnConfigUrl('');
+      loadConnections();
+    } catch (e: any) {
+      setConnError(e.message);
+    } finally {
+      setConnSaving(false);
+    }
+  }
+
+  async function toggleConnection(id: string, active: boolean) {
+    await fetch(`/api/connections/connector-connections/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ active, accountId }),
+    });
+    loadConnections();
+  }
 
   async function generate() {
     setLoading(true);
@@ -191,6 +246,60 @@ export function Connections({ user }: { user?: User }) {
                   <button className="btn small danger" onClick={() => revoke(ep.id)}>Révoquer</button>
                 </div>
               )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <h3>Connexions connecteurs (polling)</h3>
+      <p className="hint">
+        Pour les sources interrogées périodiquement (ex. flux RSS). Le serveur vérifie les connexions actives
+        toutes les <code>POLL_INTERVAL_MS</code> (60 s par défaut).
+      </p>
+
+      <div className="form">
+        <label>
+          Connecteur
+          <select value={connConnectorId} onChange={(e) => setConnConnectorId(e.target.value)}>
+            <option value="rss">rss (RSS / Atom)</option>
+            <option value="webhook">webhook (générique)</option>
+            <option value="telegram">telegram</option>
+            <option value="slack">slack</option>
+          </select>
+        </label>
+        {connConnectorId === 'rss' && (
+          <label>
+            URL du flux
+            <input
+              value={connConfigUrl}
+              onChange={(e) => setConnConfigUrl(e.target.value)}
+              placeholder="https://exemple.com/flux.xml"
+            />
+          </label>
+        )}
+        <button className="btn" onClick={saveConnection} disabled={connSaving}>
+          {connSaving ? 'Enregistrement...' : 'Ajouter / mettre à jour'}
+        </button>
+      </div>
+
+      {connError && <p className="error">{connError}</p>}
+
+      {connections.length === 0 ? (
+        <p className="hint">Aucune connexion polling pour ce compte.</p>
+      ) : (
+        <ul className="endpoint-list">
+          {connections.map((c) => (
+            <li key={c.id} className={`endpoint ${c.active ? '' : 'revoked'}`}>
+              <div>
+                <strong>{c.connectorId}</strong> <span className="badge">{c.active ? 'actif' : 'en pause'}</span>
+                {c.config?.url && <code className="value">{c.config.url}</code>}
+                <span className="value">Tokens : {c.hasTokens ? 'présents (chiffrés)' : 'aucun'}</span>
+              </div>
+              <div className="result-actions">
+                <button className="btn small" onClick={() => toggleConnection(c.id, !c.active)}>
+                  {c.active ? 'Mettre en pause' : 'Réactiver'}
+                </button>
+              </div>
             </li>
           ))}
         </ul>

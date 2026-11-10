@@ -15,6 +15,7 @@ import { webhooksRouter } from './webhooks/router.js';
 import { authRouter } from './routes/auth.js';
 import { connectionsRouter } from './routes/connections.js';
 import { migrate } from './db/client.js';
+import { startPoller } from './queues/poller.js';
 
 migrate();
 
@@ -50,6 +51,7 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
 
 app.listen(config.port, () => {
   console.log(`Serveur sur http://localhost:${config.port}`);
+  if (process.env.NODE_ENV !== 'test') startPoller();
 });
 
 /*

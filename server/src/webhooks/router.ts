@@ -4,6 +4,7 @@ import { secretFor } from '../config/index.js';
 import { enqueueEvent } from '../queues/index.js';
 import { resolveEndpoint } from './endpoint-resolver.js';
 import { decryptWebhookSecret } from './secret-manager.js';
+import { findAccountById } from '../db/repos/accounts.repo.js';
 
 export const webhooksRouter = Router();
 
@@ -38,7 +39,8 @@ webhooksRouter.post('/w/:pathToken', (req, res) => {
   if (handshake !== undefined) return void res.json(handshake);
 
   const events = connector.normalize(wr, endpoint.account_id);
-  events.forEach(enqueueEvent);
+  const userId = findAccountById(endpoint.account_id)?.user_id ?? null;
+  events.forEach((event) => enqueueEvent(event, userId));
   res.status(200).json({ accepted: events.length });
 });
 
@@ -65,7 +67,8 @@ webhooksRouter.post('/:connector/:accountId', (req, res) => {
   if (handshake !== undefined) return void res.json(handshake);
 
   const events = connector.normalize(wr, req.params.accountId);
-  events.forEach(enqueueEvent);
+  const userId = findAccountById(req.params.accountId)?.user_id ?? null;
+  events.forEach((event) => enqueueEvent(event, userId));
   res.status(200).json({ accepted: events.length });
 });
 

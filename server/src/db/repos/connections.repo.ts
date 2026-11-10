@@ -38,3 +38,40 @@ export function setConnectionTokens(id: string, accountId: string, encryptedToke
   const info = db.prepare("UPDATE connector_connections SET encrypted_tokens_json = ?, updated_at = datetime('now') WHERE id = ? AND account_id = ?").run(encryptedTokensJson, id, accountId);
   return info.changes > 0;
 }
+
+export interface PollingConnectionRow extends ConnectorConnectionRow {
+  user_id: string;
+}
+
+/** Connexions actives, avec le propriétaire (pour attribuer les événements). */
+export function listActiveConnectionsForPolling(): PollingConnectionRow[] {
+  return db.prepare(`
+    SELECT cc.*, a.user_id
+    FROM connector_connections cc
+    JOIN accounts a ON a.id = cc.account_id
+    WHERE cc.active = 1
+    ORDER BY cc.updated_at ASC
+  `).all() as PollingConnectionRow[];
+}
+
+export function updateConnection(
+  id: string,
+  accountId: string,
+  patch: { active?: boolean; config?: unknown },
+): boolean {
+  const fields: string[] = [];
+  const params: unknown[] = [];
+  if (patch.active !== undefined) {
+    fields.push('active = ?');
+    params.push(patch.active ? 1 : 0);
+  }
+  if (patch.config !== undefined) {
+    fields.push('config_json = ?');
+    params.push(patch.config === null ? null : JSON.stringify(patch.config));
+  }
+  if (fields.length === 0) return false;
+  fields.push("updated_at = datetime('now')");
+  params.push(id, accountId);
+  const info = db.prepare(`UPDATE connector_connections SET ${fields.join(', ')} WHERE id = ? AND account_id = ?`).run(...params);
+  return info.changes > 0;
+}

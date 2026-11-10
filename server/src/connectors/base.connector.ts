@@ -6,6 +6,21 @@ export interface WebhookRequest {
   body: unknown;     // corps déjà décodé en JSON
 }
 
+/** Contexte fourni à un connecteur qui interroge une source distante (polling). */
+export interface PollContext {
+  accountId: string;
+  config: Record<string, unknown>;
+  tokens: Record<string, unknown> | null;
+  /** Dernière interrogation réussie, pour ne récupérer que le nouveau contenu. */
+  lastPolledAt?: string;
+}
+
+export interface PollResult {
+  events: NewEvent[];
+  /** Curseur libre (id du dernier message, ETag, date...) pour le prochain tour. */
+  cursor?: string;
+}
+
 /** Chaque app du catalogue est un module qui étend cette classe. */
 export abstract class BaseConnector {
   abstract readonly info: ConnectorInfo;
@@ -23,7 +38,13 @@ export abstract class BaseConnector {
   /** Transforme la requête reçue en événements au format commun. */
   abstract normalize(req: WebhookRequest, accountId: string): NewEvent[];
 
-  // À ajouter plus tard : connect(), poll(), reply().
+  /**
+   * Interroge la source distante et renvoie les nouveaux événements.
+   * Optionnel : seuls les connecteurs « polling » l'implémentent (RSS, IMAP...).
+   */
+  poll?(_ctx: PollContext): Promise<PollResult>;
+
+  // À ajouter plus tard : connect(), reply().
 }
 
 export function header(req: WebhookRequest, name: string): string | undefined {

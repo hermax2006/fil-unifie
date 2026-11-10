@@ -9,6 +9,9 @@ export const config = {
   port: Number(process.env.PORT ?? 4000),
   isProd,
   allowedOrigins: parseOrigins(process.env.ALLOWED_ORIGINS),
+  /** Polling des sources distantes (RSS, IMAP...). Désactivable via POLLING_DISABLED=true. */
+  pollingEnabled: process.env.POLLING_DISABLED !== 'true',
+  pollIntervalMs: Math.max(5000, Number(process.env.POLL_INTERVAL_MS ?? 60000)),
 };
 
 /**

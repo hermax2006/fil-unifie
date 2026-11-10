@@ -218,3 +218,17 @@ Pour avancer concrètement dans l'immédiat:
 - [x] CORS strict via `ALLOWED_ORIGINS` (fallback localhost en dev)
 - [x] Handler d'erreur global (CORS -> 403)
 - [x] Rotation du secret webhook (`POST /webhook/endpoints/:id/rotate-secret`) + UI "Nouveau secret"
+
+## Validation & connexions (fait)
+- [x] Validation Zod : `POST /auth/register|login`, `GET /api/events`, routes `/api/connections/*`
+- [x] CRUD `connector_connections` (`connections.repo.ts`) + routes `GET|POST|PATCH`
+- [x] UI "Connexions connecteurs" (ajout RSS, pause/réactivation)
+
+## Polling (squelette fait)
+- [x] Contrat `poll()` / `PollContext` / `PollResult` dans `base.connector.ts`
+- [x] Connecteur RSS/Atom (`rss.connector.ts`) : fetch + parsing, filtre `lastPolledAt`, limite 20 items
+- [x] Squelette IMAP (`imap.connector.ts`) annoncé "bientôt"
+- [x] Boucle `queues/poller.ts` : connexions actives, curseur en mémoire, `POLL_INTERVAL_MS`
+- [x] Attribution `user_id` aux événements webhook et polling
+- [x] Tests RSS (normalisation, filtre temporel, refus URL non http)
+- [ ] Persister le curseur (`sync_state`), backoff/retries, BullMQ, implémentation IMAP réelle

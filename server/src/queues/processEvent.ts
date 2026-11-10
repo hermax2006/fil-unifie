@@ -4,13 +4,13 @@ import { addEvent } from '../db/events.store.js';
 import { broadcast } from '../sse/index.js';
 
 /** Logique d'un job : compléter l'événement, le stocker, le pousser au client. */
-export async function processEvent(input: NewEvent): Promise<void> {
+export async function processEvent(input: NewEvent, userId?: string | null): Promise<void> {
   const event: UnifiedEvent = {
     ...input,
     id: randomUUID(),
     receivedAt: new Date().toISOString(),
   };
-  addEvent(event);
+  addEvent(event, userId ?? null);
   broadcast(event);
 }
 

@@ -5,6 +5,8 @@ import { createEndpoint, listEndpointsForAccount, revokeEndpoint, rotateEndpoint
 import { generateWebhookSecret, encryptWebhookSecret } from '../webhooks/secret-manager.js';
 import { findOrCreateAccountForUser } from '../db/repos/accounts.repo.js';
 import { validateBody } from '../utils/validate.js';
+import { registry } from '../connectors/registry.js';
+import { updateConnection } from '../db/repos/connections.repo.js';
 
 export const connectionsRouter = Router();
 
@@ -39,10 +41,7 @@ connectionsRouter.post('/webhook/generate', isProd ? requireAuth : attachUser, v
   const { connectorId, accountId: bodyAccountId } = (req as any).validatedBody as z.infer<typeof generateSchema>;
   const accountId = resolveAccountId(req, bodyAccountId);
   if (!accountId) return res.status(400).json({ error: 'accountId requis en dev sans auth' });
-
-  // Valider que le connecteur existe
-  // (évite de créer des endpoints orphelins)
-  // import dynamique évité: on vérifie via registry dans une prochaine étape si nécessaire
+  if (!registry.get(connectorId)) return res.status(404).json({ error: 'connecteur inconnu' });
 
   const secret = generateWebhookSecret();
   const encrypted = encryptWebhookSecret(secret);
@@ -100,7 +99,22 @@ connectionsRouter.post('/connector-connections', isProd ? requireAuth : attachUs
   const { connectorId, config, accountId: bodyAccountId } = (req as any).validatedBody;
   const accountId = resolveAccountId(req, bodyAccountId);
   if (!accountId) return res.status(400).json({ error: 'accountId requis' });
+  if (!registry.get(connectorId)) return res.status(404).json({ error: 'connecteur inconnu' });
   const { upsertConnection } = await import('../db/repos/connections.repo.js');
   const id = upsertConnection(accountId, connectorId, config);
   return res.json({ ok: true, id });
+});
+
+connectionsRouter.patch('/connector-connections/:id', isProd ? requireAuth : attachUser, validateBody(z.object({
+  active: z.boolean().optional(),
+  config: z.record(z.any()).optional(),
+  accountId: z.string().optional(),
+})), (req: AuthRequest, res) => {
+  const { active, config, accountId: bodyAccountId } = (req as any).validatedBody;
+  const accountId = resolveAccountId(req, bodyAccountId);
+  if (!accountId) return res.status(400).json({ error: 'accountId requis' });
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const ok = updateConnection(id, accountId, { active, config });
+  if (!ok) return res.status(404).json({ error: 'connexion introuvable' });
+  return res.json({ ok: true });
 });
