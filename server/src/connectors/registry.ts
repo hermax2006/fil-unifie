@@ -12,11 +12,11 @@ const connectors: BaseConnector[] = [
   new TelegramConnector(),
   new SlackConnector(),
   new RssConnector(),
+  new ImapConnector(),
 ];
 
 /** Apps annoncées « bientôt » : l'utilisateur peut dire laquelle il veut. */
 const soon: ConnectorInfo[] = [
-  new ImapConnector().info,
   { id: 'gmail', name: 'Gmail', category: 'Mail, agenda, fichiers', access: 'conditionnel', canReply: true, status: 'soon' },
   { id: 'gcal', name: 'Google Calendar', category: 'Mail, agenda, fichiers', access: 'gratuit', canReply: true, status: 'soon' },
   { id: 'whatsapp-business', name: 'WhatsApp Business', category: 'Messagerie et collaboration', access: 'payant', canReply: true, status: 'soon' },

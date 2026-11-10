@@ -1,3 +1,11 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import dotenv from 'dotenv';
+
+// Charger .env AVANT de lire process.env (les imports ES sont hoistés).
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
+
 const isProd = process.env.NODE_ENV === 'production';
 
 function parseOrigins(raw?: string): string[] {
@@ -14,6 +22,13 @@ export const config = {
   pollIntervalMs: Math.max(5000, Number(process.env.POLL_INTERVAL_MS ?? 60000)),
   pollBackoffBaseMs: Math.max(1000, Number(process.env.POLL_BACKOFF_BASE_MS ?? 30000)),
   pollBackoffMaxMs: Math.max(60000, Number(process.env.POLL_BACKOFF_MAX_MS ?? 1800000)),
+  /** File d'événements : mémoire (défaut) ou BullMQ/Redis. */
+  queueDriver: (process.env.QUEUE_DRIVER === 'bullmq' ? 'bullmq' : 'memory') as 'bullmq' | 'memory',
+  redisUrl: process.env.REDIS_URL,
+  redisHost: process.env.REDIS_HOST ?? '127.0.0.1',
+  redisPort: Number(process.env.REDIS_PORT ?? 6379),
+  redisPassword: process.env.REDIS_PASSWORD,
+  redisDb: Number(process.env.REDIS_DB ?? 0),
 };
 
 /**

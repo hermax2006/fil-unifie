@@ -32,6 +32,10 @@ export function Connections({ user }: { user?: User }) {
   const [connections, setConnections] = useState<ConnectorConnection[]>([]);
   const [connConnectorId, setConnConnectorId] = useState('rss');
   const [connConfigUrl, setConnConfigUrl] = useState('');
+  const [connHost, setConnHost] = useState('');
+  const [connPort, setConnPort] = useState('993');
+  const [connUser, setConnUser] = useState('');
+  const [connPass, setConnPass] = useState('');
   const [connSaving, setConnSaving] = useState(false);
   const [connError, setConnError] = useState<string | null>(null);
 
@@ -63,7 +67,20 @@ export function Connections({ user }: { user?: User }) {
     setConnSaving(true);
     setConnError(null);
     try {
-      const config = connConnectorId === 'rss' && connConfigUrl.trim() ? { url: connConfigUrl.trim() } : undefined;
+      let config: Record<string, unknown> | undefined;
+      if (connConnectorId === 'rss' && connConfigUrl.trim()) {
+        config = { url: connConfigUrl.trim() };
+      }
+      if (connConnectorId === 'imap') {
+        if (!connHost.trim() || !connUser.trim()) throw new Error('Hôte et utilisateur IMAP requis');
+        config = {
+          host: connHost.trim(),
+          port: Number(connPort) || 993,
+          secure: true,
+          user: connUser.trim(),
+        };
+      }
+
       const res = await fetch('/api/connections/connector-connections', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -72,7 +89,22 @@ export function Connections({ user }: { user?: User }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erreur');
+
+      if (connConnectorId === 'imap' && connPass.trim()) {
+        const tokenRes = await fetch(`/api/connections/connector-connections/${data.id}/tokens`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ tokens: { pass: connPass.trim() }, accountId }),
+        });
+        const tokenData = await tokenRes.json();
+        if (!tokenRes.ok) throw new Error(tokenData.error || 'Erreur enregistrement du mot de passe');
+      }
+
       setConnConfigUrl('');
+      setConnHost('');
+      setConnUser('');
+      setConnPass('');
       loadConnections();
     } catch (e: any) {
       setConnError(e.message);
@@ -264,6 +296,7 @@ export function Connections({ user }: { user?: User }) {
           Connecteur
           <select value={connConnectorId} onChange={(e) => setConnConnectorId(e.target.value)}>
             <option value="rss">rss (RSS / Atom)</option>
+            <option value="imap">imap (mail)</option>
             <option value="webhook">webhook (générique)</option>
             <option value="telegram">telegram</option>
             <option value="slack">slack</option>
@@ -278,6 +311,31 @@ export function Connections({ user }: { user?: User }) {
               placeholder="https://exemple.com/flux.xml"
             />
           </label>
+        )}
+        {connConnectorId === 'imap' && (
+          <>
+            <label>
+              Hôte IMAP
+              <input value={connHost} onChange={(e) => setConnHost(e.target.value)} placeholder="imap.example.com" />
+            </label>
+            <label>
+              Port
+              <input value={connPort} onChange={(e) => setConnPort(e.target.value)} placeholder="993" />
+            </label>
+            <label>
+              Utilisateur
+              <input value={connUser} onChange={(e) => setConnUser(e.target.value)} placeholder="moi@example.com" />
+            </label>
+            <label>
+              Mot de passe d'application
+              <input
+                type="password"
+                value={connPass}
+                onChange={(e) => setConnPass(e.target.value)}
+                placeholder="chiffré en BDD, jamais réaffiché"
+              />
+            </label>
+          </>
         )}
         <button className="btn" onClick={saveConnection} disabled={connSaving}>
           {connSaving ? 'Enregistrement...' : 'Ajouter / mettre à jour'}

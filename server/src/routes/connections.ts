@@ -6,8 +6,9 @@ import { generateWebhookSecret, encryptWebhookSecret } from '../webhooks/secret-
 import { findOrCreateAccountForUser } from '../db/repos/accounts.repo.js';
 import { validateBody } from '../utils/validate.js';
 import { registry } from '../connectors/registry.js';
-import { updateConnection } from '../db/repos/connections.repo.js';
+import { updateConnection, setConnectionTokens } from '../db/repos/connections.repo.js';
 import { getSyncState, getLatestSyncRun } from '../db/repos/sync.repo.js';
+import { encryptToken } from '../crypto/tokens.js';
 
 export const connectionsRouter = Router();
 
@@ -122,6 +123,21 @@ connectionsRouter.patch('/connector-connections/:id', isProd ? requireAuth : att
   if (!accountId) return res.status(400).json({ error: 'accountId requis' });
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const ok = updateConnection(id, accountId, { active, config });
+  if (!ok) return res.status(404).json({ error: 'connexion introuvable' });
+  return res.json({ ok: true });
+});
+
+// Secrets/tokens (mot de passe IMAP, tokens OAuth...) : chiffrés avant stockage.
+connectionsRouter.put('/connector-connections/:id/tokens', isProd ? requireAuth : attachUser, validateBody(z.object({
+  tokens: z.record(z.any()),
+  accountId: z.string().optional(),
+})), (req: AuthRequest, res) => {
+  const { tokens, accountId: bodyAccountId } = (req as any).validatedBody;
+  const accountId = resolveAccountId(req, bodyAccountId);
+  if (!accountId) return res.status(400).json({ error: 'accountId requis' });
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const encrypted = encryptToken(JSON.stringify(tokens));
+  const ok = setConnectionTokens(id, accountId, encrypted);
   if (!ok) return res.status(404).json({ error: 'connexion introuvable' });
   return res.json({ ok: true });
 });

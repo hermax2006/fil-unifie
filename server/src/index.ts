@@ -1,13 +1,5 @@
-import 'dotenv/config';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import dotenv from 'dotenv';
 import express from 'express';
 import cors from 'cors';
-
-// Charger .env depuis la racine du projet (4-/) si présent
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 import cookieParser from 'cookie-parser';
 import { config } from './config/index.js';
 import { apiRouter } from './routes/api.js';
@@ -15,7 +7,8 @@ import { webhooksRouter } from './webhooks/router.js';
 import { authRouter } from './routes/auth.js';
 import { connectionsRouter } from './routes/connections.js';
 import { migrate } from './db/client.js';
-import { startPoller } from './queues/poller.js';
+import { startPoller, stopPoller } from './queues/poller.js';
+import { startQueue, stopQueue } from './queues/index.js';
 
 migrate();
 
@@ -51,8 +44,20 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
 
 app.listen(config.port, () => {
   console.log(`Serveur sur http://localhost:${config.port}`);
-  if (process.env.NODE_ENV !== 'test') startPoller();
+  if (process.env.NODE_ENV !== 'test') {
+    void startQueue();
+    startPoller();
+  }
 });
+
+async function shutdown() {
+  stopPoller();
+  await stopQueue();
+  process.exit(0);
+}
+
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
 
 /*
  * POINT D'ENTRÉE DU SERVEUR

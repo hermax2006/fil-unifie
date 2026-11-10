@@ -9,7 +9,7 @@ import { findAccountById } from '../db/repos/accounts.repo.js';
 export const webhooksRouter = Router();
 
 /** Nouveau mode sécurisé : par point d'entrée unique (path_token) */
-webhooksRouter.post('/w/:pathToken', (req, res) => {
+webhooksRouter.post('/w/:pathToken', async (req, res) => {
   const endpoint = resolveEndpoint(req.params.pathToken);
   if (!endpoint || !endpoint.active) return void res.status(404).json({ error: 'point d\'entrée inconnu ou désactivé' });
 
@@ -40,12 +40,12 @@ webhooksRouter.post('/w/:pathToken', (req, res) => {
 
   const events = connector.normalize(wr, endpoint.account_id);
   const userId = findAccountById(endpoint.account_id)?.user_id ?? null;
-  events.forEach((event) => enqueueEvent(event, userId));
+  await Promise.all(events.map((event) => enqueueEvent(event, userId)));
   res.status(200).json({ accepted: events.length });
 });
 
 /** Ancien mode (rétrocompatibilité) - à garder temporairement en dev uniquement */
-webhooksRouter.post('/:connector/:accountId', (req, res) => {
+webhooksRouter.post('/:connector/:accountId', async (req, res) => {
   if (process.env.NODE_ENV === 'production') {
     return void res.status(410).json({ error: 'cet endpoint est obsolète. Utiliser /webhooks/w/:path_token' });
   }
@@ -68,7 +68,7 @@ webhooksRouter.post('/:connector/:accountId', (req, res) => {
 
   const events = connector.normalize(wr, req.params.accountId);
   const userId = findAccountById(req.params.accountId)?.user_id ?? null;
-  events.forEach((event) => enqueueEvent(event, userId));
+  await Promise.all(events.map((event) => enqueueEvent(event, userId)));
   res.status(200).json({ accepted: events.length });
 });
 

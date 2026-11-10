@@ -14,10 +14,14 @@
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "better-sqlite3": "^11.5.0",
+    "bullmq": "^6.7.3",
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^5.0.1",
+    "imapflow": "^2.11.0",
+    "ioredis": "^6.0.0",
+    "mailparser": "^3.14.2",
     "zod": "^3.23.8"
   },
   "devDependencies": {

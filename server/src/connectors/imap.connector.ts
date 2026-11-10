@@ -1,11 +1,31 @@
 import type { NewEvent } from '@fil/shared';
+import { ImapFlow } from 'imapflow';
+import { simpleParser } from 'mailparser';
 import { BaseConnector, type PollContext, type PollResult, type WebhookRequest } from './base.connector.js';
 
+function asString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function asNumber(value: unknown, fallback: number): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function toIso(value: string | Date | undefined): string | undefined {
+  if (!value) return undefined;
+  const d = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
+}
+
 /**
- * Squelette IMAP.
- * La connexion (host, port, user, mot de passe/app-password) sera stockée chiffrée
- * dans connector_connections.encrypted_tokens_json. L'implémentation réelle
- * (imapflow ou équivalent) viendra à l'étape « polling mail ».
+ * Connecteur IMAP.
+ * - config (non sensible) : host, port, secure, user, mailbox
+ * - tokens (chiffrés en BDD) : pass (mot de passe ou mot de passe d'application)
+ *
+ * On interroge INBOX (ou config.mailbox) depuis la dernière synchronisation,
+ * puis on convertit chaque message en événement du fil. Les doublons sont
+ * éliminés par dedup_key (Message-ID).
  */
 export class ImapConnector extends BaseConnector {
   readonly info = {
@@ -14,14 +34,94 @@ export class ImapConnector extends BaseConnector {
     category: 'Mail, agenda, fichiers',
     access: 'gratuit' as const,
     canReply: true,
-    status: 'soon' as const,
+    status: 'available' as const,
   };
 
   normalize(_req: WebhookRequest, _accountId: string): NewEvent[] {
     return [];
   }
 
-  async poll(_ctx: PollContext): Promise<PollResult> {
-    throw new Error('IMAP: polling pas encore implémenté');
+  async poll(ctx: PollContext): Promise<PollResult> {
+    const host = asString(ctx.config.host);
+    const user = asString(ctx.config.user);
+    const pass = asString(ctx.tokens?.pass);
+    if (!host) throw new Error('IMAP: config.host requis');
+    if (!user) throw new Error('IMAP: config.user requis');
+    if (!pass) throw new Error('IMAP: tokens.pass requis (mot de passe d\'application)');
+
+    const port = asNumber(ctx.config.port, 993);
+    const secure = ctx.config.secure !== false;
+    const mailbox = asString(ctx.config.mailbox) ?? 'INBOX';
+    const now = new Date().toISOString();
+
+    // IMAP ne filtre qu'à la journée : on prend une marge d'un jour.
+    // Les doublons sont rejetés ensuite par dedup_key.
+    const since = ctx.lastPolledAt
+      ? new Date(new Date(ctx.lastPolledAt).getTime() - 24 * 60 * 60 * 1000)
+      : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    const client = new ImapFlow({
+      host,
+      port,
+      secure,
+      auth: { user, pass },
+      logger: false,
+      socketTimeout: 30000,
+    });
+
+    const events: NewEvent[] = [];
+    try {
+      await client.connect();
+      const lock = await client.getMailboxLock(mailbox);
+      try {
+        for await (const message of client.fetch(
+          { since },
+          { envelope: true, source: true, internalDate: true, uid: true },
+          { uid: true },
+        )) {
+          if (events.length >= 20) break;
+          const envelope = message.envelope;
+          const subject = asString(envelope?.subject) ?? '(sans objet)';
+          const from = envelope?.from?.[0];
+          let body = subject;
+
+          if (message.source) {
+            try {
+              const parsed = await simpleParser(message.source);
+              const htmlText = typeof parsed.html === 'string' ? parsed.html.replace(/<[^>]*>/g, ' ') : undefined;
+              body = asString(parsed.text) ?? asString(htmlText) ?? subject;
+            } catch {
+              // Message MIME illisible : on garde l'objet comme corps.
+            }
+          }
+
+          const occurredAt =
+            toIso(message.internalDate) ??
+            toIso(envelope?.date) ??
+            now;
+
+          events.push({
+            connector: this.info.id,
+            accountId: ctx.accountId,
+            externalId: asString(envelope?.messageId) ?? `uid:${message.uid}`,
+            kind: 'message',
+            author: from ? { id: from.address, name: from.name || from.address || 'inconnu' } : undefined,
+            title: subject,
+            body: body.slice(0, 20000),
+            occurredAt,
+          });
+        }
+      } finally {
+        lock.release();
+      }
+    } finally {
+      try {
+        await client.logout();
+      } catch {
+        // La connexion peut déjà être fermée après une erreur réseau.
+      }
+    }
+
+    return { events, cursor: now };
   }
 }

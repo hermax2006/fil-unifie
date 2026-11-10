@@ -235,4 +235,21 @@ Pour avancer concrètement dans l'immédiat:
 - [x] Backoff exponentiel plafonné (`POLL_BACKOFF_BASE_MS` / `POLL_BACKOFF_MAX_MS`)
 - [x] Historique des runs (`sync_runs`) : échecs + succès avec événements, purge > 30 j
 - [x] UI : dernière sync + dernier échec par connexion
-- [ ] BullMQ/Redis (relances durables, DLQ), implémentation IMAP réelle
+- [x] BullMQ/Redis (relances durables) et implémentation IMAP réelle (voir sections dédiées)
+
+## IMAP réel (fait)
+- [x] Connecteur IMAP via `imapflow` + `mailparser`
+- [x] Config : `host`, `port`, `secure`, `user`, `mailbox` (INBOX par défaut)
+- [x] Mot de passe/app-password dans `tokens.pass`, chiffré AES-256-GCM
+- [x] Route `PUT /api/connections/connector-connections/:id/tokens` (jamais réaffiché)
+- [x] UI : formulaire IMAP (hôte, port, utilisateur, mot de passe)
+- [x] Recherche IMAP `SINCE` avec marge d'un jour, max 20 messages, déduplication par Message-ID
+- [ ] Dossiers multiples, pièces jointes, OAuth Gmail/Outlook, envoi de réponses
+
+## BullMQ / Redis (fait)
+- [x] `QUEUE_DRIVER=bullmq` : Queue + Worker BullMQ (`ioredis`)
+- [x] Relances : 5 tentatives, backoff exponentiel, `removeOnComplete/Fail`
+- [x] Fallback automatique en mémoire si Redis est indisponible
+- [x] Arrêt propre sur SIGINT/SIGTERM (`stopPoller`, `stopQueue`)
+- [x] Redis local installé et testé (smoke test : webhook -> BullMQ -> SQLite/SSE)
+- [ ] Supervision des files (Bull Board), DLQ dédiée, Redis managé en production
