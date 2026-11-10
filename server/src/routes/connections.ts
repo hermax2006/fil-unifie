@@ -7,6 +7,7 @@ import { findOrCreateAccountForUser } from '../db/repos/accounts.repo.js';
 import { validateBody } from '../utils/validate.js';
 import { registry } from '../connectors/registry.js';
 import { updateConnection } from '../db/repos/connections.repo.js';
+import { getSyncState, getLatestSyncRun } from '../db/repos/sync.repo.js';
 
 export const connectionsRouter = Router();
 
@@ -81,14 +82,20 @@ connectionsRouter.get('/connector-connections', isProd ? requireAuth : attachUse
   const accountId = resolveAccountId(req, (req.query.accountId as string) || undefined);
   if (!accountId) return res.status(400).json({ error: 'accountId requis' });
   const { listConnections } = await import('../db/repos/connections.repo.js');
-  return res.json(listConnections(accountId).map((c) => ({
-    id: c.id,
-    connectorId: c.connector_id,
-    active: !!c.active,
-    config: c.config_json ? JSON.parse(c.config_json) : null,
-    hasTokens: !!c.encrypted_tokens_json,
-    updatedAt: c.updated_at,
-  })));
+  return res.json(listConnections(accountId).map((c) => {
+    const sync = getSyncState(c.id);
+    const run = getLatestSyncRun(c.id);
+    return {
+      id: c.id,
+      connectorId: c.connector_id,
+      active: !!c.active,
+      config: c.config_json ? JSON.parse(c.config_json) : null,
+      hasTokens: !!c.encrypted_tokens_json,
+      updatedAt: c.updated_at,
+      lastPolledAt: sync?.last_polled_at ?? null,
+      lastRun: run ? { status: run.status, at: run.finished_at ?? run.started_at, error: run.error } : null,
+    };
+  }));
 });
 
 connectionsRouter.post('/connector-connections', isProd ? requireAuth : attachUser, validateBody(z.object({

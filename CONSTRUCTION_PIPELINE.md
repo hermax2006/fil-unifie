@@ -228,7 +228,11 @@ Pour avancer concrètement dans l'immédiat:
 - [x] Contrat `poll()` / `PollContext` / `PollResult` dans `base.connector.ts`
 - [x] Connecteur RSS/Atom (`rss.connector.ts`) : fetch + parsing, filtre `lastPolledAt`, limite 20 items
 - [x] Squelette IMAP (`imap.connector.ts`) annoncé "bientôt"
-- [x] Boucle `queues/poller.ts` : connexions actives, curseur en mémoire, `POLL_INTERVAL_MS`
+- [x] Boucle `queues/poller.ts` : connexions actives, `POLL_INTERVAL_MS`
 - [x] Attribution `user_id` aux événements webhook et polling
 - [x] Tests RSS (normalisation, filtre temporel, refus URL non http)
-- [ ] Persister le curseur (`sync_state`), backoff/retries, BullMQ, implémentation IMAP réelle
+- [x] Curseur persisté (`sync_state`, migration v3) + reprise après redémarrage
+- [x] Backoff exponentiel plafonné (`POLL_BACKOFF_BASE_MS` / `POLL_BACKOFF_MAX_MS`)
+- [x] Historique des runs (`sync_runs`) : échecs + succès avec événements, purge > 30 j
+- [x] UI : dernière sync + dernier échec par connexion
+- [ ] BullMQ/Redis (relances durables, DLQ), implémentation IMAP réelle

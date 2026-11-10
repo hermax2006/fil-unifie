@@ -86,3 +86,28 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
+
+-- Curseur de synchronisation par connexion (RSS, IMAP...)
+CREATE TABLE IF NOT EXISTS sync_state (
+  connection_id TEXT NOT NULL,
+  resource TEXT NOT NULL DEFAULT 'default',
+  cursor TEXT,
+  last_polled_at TEXT,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (connection_id, resource),
+  FOREIGN KEY (connection_id) REFERENCES connector_connections(id) ON DELETE CASCADE
+);
+
+-- Historique léger des synchronisations (échecs + succès avec événements)
+CREATE TABLE IF NOT EXISTS sync_runs (
+  id TEXT PRIMARY KEY,
+  connection_id TEXT NOT NULL,
+  started_at TEXT NOT NULL,
+  finished_at TEXT,
+  status TEXT NOT NULL,
+  events_count INTEGER NOT NULL DEFAULT 0,
+  error TEXT,
+  FOREIGN KEY (connection_id) REFERENCES connector_connections(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_sync_runs_connection ON sync_runs(connection_id, started_at DESC);

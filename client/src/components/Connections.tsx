@@ -9,6 +9,8 @@ type ConnectorConnection = {
   config: { url?: string } | null;
   hasTokens: boolean;
   updatedAt: string;
+  lastPolledAt?: string | null;
+  lastRun?: { status: string; at: string; error: string | null } | null;
 };
 
 /**
@@ -294,6 +296,12 @@ export function Connections({ user }: { user?: User }) {
                 <strong>{c.connectorId}</strong> <span className="badge">{c.active ? 'actif' : 'en pause'}</span>
                 {c.config?.url && <code className="value">{c.config.url}</code>}
                 <span className="value">Tokens : {c.hasTokens ? 'présents (chiffrés)' : 'aucun'}</span>
+                <span className="value">
+                  Dernière sync : {c.lastPolledAt ? new Date(c.lastPolledAt).toLocaleString() : 'jamais'}
+                  {c.lastRun?.status === 'error' && (
+                    <span className="error small"> — échec : {c.lastRun.error}</span>
+                  )}
+                </span>
               </div>
               <div className="result-actions">
                 <button className="btn small" onClick={() => toggleConnection(c.id, !c.active)}>

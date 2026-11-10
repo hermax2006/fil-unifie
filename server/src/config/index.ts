@@ -12,6 +12,8 @@ export const config = {
   /** Polling des sources distantes (RSS, IMAP...). Désactivable via POLLING_DISABLED=true. */
   pollingEnabled: process.env.POLLING_DISABLED !== 'true',
   pollIntervalMs: Math.max(5000, Number(process.env.POLL_INTERVAL_MS ?? 60000)),
+  pollBackoffBaseMs: Math.max(1000, Number(process.env.POLL_BACKOFF_BASE_MS ?? 30000)),
+  pollBackoffMaxMs: Math.max(60000, Number(process.env.POLL_BACKOFF_MAX_MS ?? 1800000)),
 };
 
 /**
