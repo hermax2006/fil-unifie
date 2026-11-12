@@ -70,6 +70,10 @@ function makeClient(info: ReturnType<typeof connectionFrom>): ImapFlow {
     secure: info.secure,
     auth: { user: info.user, pass: info.pass },
     logger: false,
+    // Timeouts courts : sans eux, une connexion qui traîne bloque la requête
+    // HTTP jusqu'à la coupure du proxy/navigateur (réponse vide côté client).
+    connectionTimeout: 15000,
+    greetingTimeout: 15000,
     socketTimeout: 30000,
   });
 }

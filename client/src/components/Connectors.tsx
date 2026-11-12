@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { ConnectorInfo } from '@fil/shared';
+import { readJson } from '../api.js';
 
 export function Connectors() {
   const [items, setItems] = useState<ConnectorInfo[]>([]);
@@ -7,7 +8,7 @@ export function Connectors() {
 
   useEffect(() => {
     fetch('/api/connectors')
-      .then((r) => r.json())
+      .then((r) => readJson<ConnectorInfo[]>(r))
       .then(setItems)
       .catch(() => {});
   }, []);

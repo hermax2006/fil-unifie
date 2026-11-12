@@ -3,6 +3,7 @@ import { Connectors } from './components/Connectors';
 import { Connections } from './components/Connections';
 import { AuthPanel } from './components/AuthPanel';
 import { useEffect, useState } from 'react';
+import { readJson } from './api.js';
 
 type User = { id: string; email: string; accountId?: string } | null;
 
@@ -14,7 +15,7 @@ export function App() {
     try {
       const res = await fetch('/auth/me', { credentials: 'include' });
       if (!res.ok) return setUser(null);
-      const data = await res.json();
+      const data = await readJson(res);
       setUser(data.user);
     } catch {
       setUser(null);

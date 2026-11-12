@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { readJson } from '../api.js';
 
 type User = { id: string; email: string; accountId?: string } | null;
 type Endpoint = { id: string; connectorId: string; url: string | null; active: boolean; createdAt: string };
@@ -51,7 +52,7 @@ export function Connections({ user }: { user?: User }) {
       const q = !user ? `?accountId=${encodeURIComponent(accountId)}` : '';
       const res = await fetch(`/api/connections/webhook/endpoints${q}`, { credentials: 'include' });
       if (!res.ok) return;
-      setEndpoints(await res.json());
+      setEndpoints(await readJson(res));
     } catch {}
   }
 
@@ -60,7 +61,7 @@ export function Connections({ user }: { user?: User }) {
       const q = !user ? `?accountId=${encodeURIComponent(accountId)}` : '';
       const res = await fetch(`/api/connections/connector-connections${q}`, { credentials: 'include' });
       if (!res.ok) return;
-      setConnections(await res.json());
+      setConnections(await readJson(res));
     } catch {}
   }
 
@@ -100,8 +101,8 @@ export function Connections({ user }: { user?: User }) {
         credentials: 'include',
         body: JSON.stringify({ connectorId: connConnectorId, config, accountId }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Erreur');
+      const data = await readJson(res);
+      if (!res.ok) throw new Error(data.error || `Erreur ${res.status}`);
 
       if (connConnectorId === 'imap' && connPass.trim()) {
         const tokenRes = await fetch(`/api/connections/connector-connections/${data.id}/tokens`, {
@@ -110,8 +111,8 @@ export function Connections({ user }: { user?: User }) {
           credentials: 'include',
           body: JSON.stringify({ tokens: { pass: connPass.trim() }, accountId }),
         });
-        const tokenData = await tokenRes.json();
-        if (!tokenRes.ok) throw new Error(tokenData.error || 'Erreur enregistrement du mot de passe');
+        const tokenData = await readJson(tokenRes);
+        if (!tokenRes.ok) throw new Error(tokenData.error || `Erreur ${tokenRes.status} (mot de passe)`);
       }
 
       setConnConfigUrl('');
@@ -157,7 +158,7 @@ export function Connections({ user }: { user?: User }) {
         credentials: 'include',
         body: JSON.stringify({ accountId }),
       });
-      const data = await res.json();
+      const data = await readJson(res);
       if (!res.ok) throw new Error(data.error || `Erreur ${res.status}`);
       const result = data.result as { mailboxes?: string[]; missing?: string[] };
       const missing = result.missing?.length ? ` — dossiers absents : ${result.missing.join(', ')}` : '';
@@ -182,10 +183,10 @@ export function Connections({ user }: { user?: User }) {
         credentials: 'include',
         body: JSON.stringify({ accountId, connectorId }),
       });
-      const data = await res.json();
+      const data = await readJson(res);
       if (!res.ok) {
         if (res.status === 401) throw new Error('Non authentifié. Connecte-toi d\'abord.');
-        throw new Error(data.error || 'Erreur');
+        throw new Error(data.error || `Erreur ${res.status}`);
       }
       setResult(data);
       loadEndpoints();
@@ -222,7 +223,7 @@ export function Connections({ user }: { user?: User }) {
         headers: { 'Content-Type': 'application/json', [header]: result.secret },
         body: JSON.stringify({ kind: 'message', title: 'Test depuis l\'UI', body: 'Ceci est un test envoyé depuis l\'onglet Connexions', author: 'ui' }),
       });
-      const data = await res.json().catch(() => ({}));
+      const data = await readJson(res);
       if (!res.ok) throw new Error(data.error || `Erreur ${res.status}`);
       setTestResult(`OK : ${data.accepted ?? 1} événement accepté. Va voir l'onglet Fil.`);
     } catch (e: any) {
@@ -249,12 +250,12 @@ export function Connections({ user }: { user?: User }) {
       credentials: 'include',
       body: JSON.stringify({ accountId }),
     });
-    const data = await res.json();
+    const data = await readJson(res);
     if (res.ok) {
       setResult({ ...data, url: '(URL inchangée, secret remplacé)', warning: data.warning });
       setTestResult(null);
     } else {
-      setError(data.error || 'Erreur rotation');
+      setError(data.error || `Erreur rotation ${res.status}`);
     }
   }
 
@@ -265,13 +266,13 @@ export function Connections({ user }: { user?: User }) {
       credentials: 'include',
       body: JSON.stringify({ accountId }),
     });
-    const data = await res.json();
+    const data = await readJson(res);
     if (res.ok) {
       setResult(data);
       setTestResult(null);
       loadEndpoints();
     } else {
-      setError(data.error || 'Erreur régénération');
+      setError(data.error || `Erreur régénération ${res.status}`);
     }
   }
 

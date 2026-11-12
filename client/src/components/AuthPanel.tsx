@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { readJson } from '../api.js';
 
 type User = { id: string; email: string; accountId?: string } | null;
 
@@ -20,8 +21,8 @@ export function AuthPanel({ user, onChange }: { user: User; onChange: () => void
         credentials: 'include',
         body: JSON.stringify({ email, password }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Erreur');
+      const data = await readJson(res);
+      if (!res.ok) throw new Error(data.error || `Erreur ${res.status}`);
       setEmail('');
       setPassword('');
       onChange();

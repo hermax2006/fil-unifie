@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { UnifiedEvent } from '@fil/shared';
+import { readJson } from '../api.js';
 
 const PAGE_SIZE = 50;
 
@@ -67,7 +68,7 @@ export function Feed() {
       const before = reset ? undefined : events[events.length - 1]?.receivedAt;
       const res = await fetch(`/api/events?${buildQs(before).toString()}`, { credentials: 'include' });
       if (!res.ok) throw new Error(`Erreur ${res.status}`);
-      const data = (await res.json()) as UnifiedEvent[];
+      const data = (await readJson<UnifiedEvent[]>(res)) ?? [];
       setEvents((prev) => {
         if (reset) return data;
         const known = new Set(prev.map((e) => e.id));
@@ -88,7 +89,7 @@ export function Feed() {
   async function loadUnread() {
     try {
       const res = await fetch('/api/events/unread-count', { credentials: 'include' });
-      if (res.ok) setUnread((await res.json()).count ?? 0);
+      if (res.ok) setUnread(((await readJson<{ count?: number }>(res)).count) ?? 0);
     } catch {
       // Le compteur n'est pas bloquant.
     }
@@ -179,7 +180,7 @@ export function Feed() {
           to: replyTo.trim() || undefined,
         }),
       });
-      const data = await res.json().catch(() => ({}));
+      const data = await readJson(res);
       if (!res.ok) throw new Error(data.error || `Erreur ${res.status}`);
       setReplyStatus((prev) => ({ ...prev, [e.id]: 'OK : réponse envoyée' }));
       setReplyToId(null);
