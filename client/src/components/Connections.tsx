@@ -6,7 +6,7 @@ type ConnectorConnection = {
   id: string;
   connectorId: string;
   active: boolean;
-  config: { url?: string } | null;
+  config: { url?: string; host?: string; smtpHost?: string } | null;
   hasTokens: boolean;
   updatedAt: string;
   lastPolledAt?: string | null;
@@ -37,6 +37,10 @@ export function Connections({ user }: { user?: User }) {
   const [connUser, setConnUser] = useState('');
   const [connPass, setConnPass] = useState('');
   const [connMailboxes, setConnMailboxes] = useState('INBOX');
+  const [connSmtpHost, setConnSmtpHost] = useState('');
+  const [connSmtpPort, setConnSmtpPort] = useState('465');
+  const [connSmtpSecure, setConnSmtpSecure] = useState(true);
+  const [connSmtpUser, setConnSmtpUser] = useState('');
   const [connSaving, setConnSaving] = useState(false);
   const [connError, setConnError] = useState<string | null>(null);
   const [connTestingId, setConnTestingId] = useState<string | null>(null);
@@ -83,6 +87,10 @@ export function Connections({ user }: { user?: User }) {
           secure: true,
           user: connUser.trim(),
           mailboxes: mailboxes.length > 0 ? mailboxes : ['INBOX'],
+          smtpHost: connSmtpHost.trim() || undefined,
+          smtpPort: Number(connSmtpPort) || undefined,
+          smtpSecure: connSmtpSecure,
+          smtpUser: connSmtpUser.trim() || undefined,
         };
       }
 
@@ -111,6 +119,10 @@ export function Connections({ user }: { user?: User }) {
       setConnUser('');
       setConnPass('');
       setConnMailboxes('INBOX');
+      setConnSmtpHost('');
+      setConnSmtpPort('465');
+      setConnSmtpSecure(true);
+      setConnSmtpUser('');
       loadConnections();
     } catch (e: any) {
       setConnError(e.message);
@@ -390,6 +402,22 @@ export function Connections({ user }: { user?: User }) {
                 placeholder="chiffré en BDD, jamais réaffiché"
               />
             </label>
+            <label>
+              Hôte SMTP (réponses)
+              <input value={connSmtpHost} onChange={(e) => setConnSmtpHost(e.target.value)} placeholder="défaut : hôte IMAP" />
+            </label>
+            <label>
+              Port SMTP
+              <input value={connSmtpPort} onChange={(e) => setConnSmtpPort(e.target.value)} placeholder="465" />
+            </label>
+            <label>
+              Utilisateur SMTP
+              <input value={connSmtpUser} onChange={(e) => setConnSmtpUser(e.target.value)} placeholder="défaut : utilisateur IMAP" />
+            </label>
+            <label className="checkbox">
+              <input type="checkbox" checked={connSmtpSecure} onChange={(e) => setConnSmtpSecure(e.target.checked)} />
+              TLS direct (port 465)
+            </label>
           </>
         )}
         <button className="btn" onClick={saveConnection} disabled={connSaving}>
@@ -408,6 +436,7 @@ export function Connections({ user }: { user?: User }) {
               <div>
                 <strong>{c.connectorId}</strong> <span className="badge">{c.active ? 'actif' : 'en pause'}</span>
                 {c.config?.url && <code className="value">{c.config.url}</code>}
+                {c.config?.host && <span className="value">IMAP : {c.config.host} — SMTP : {c.config.smtpHost || c.config.host}</span>}
                 <span className="value">Tokens : {c.hasTokens ? 'présents (chiffrés)' : 'aucun'}</span>
                 <span className="value">
                   Dernière sync : {c.lastPolledAt ? new Date(c.lastPolledAt).toLocaleString() : 'jamais'}

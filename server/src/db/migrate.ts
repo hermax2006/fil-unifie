@@ -106,5 +106,36 @@ export function migrate() {
     }
 
     setVersion(5);
+    current = 5;
+  }
+
+  // v6: lien événement -> connexion + réponses sortantes (SMTP)
+  if (current < 6) {
+    try {
+      db.exec('ALTER TABLE events ADD COLUMN connection_id TEXT');
+    } catch (e: any) {
+      if (!String(e?.message || '').includes('duplicate column name')) throw e;
+    }
+    db.exec('CREATE INDEX IF NOT EXISTS idx_events_connection ON events(connection_id)');
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS outbound_messages (
+        id TEXT PRIMARY KEY,
+        event_id TEXT,
+        connection_id TEXT,
+        account_id TEXT NOT NULL,
+        user_id TEXT,
+        to_json TEXT NOT NULL,
+        subject TEXT,
+        body TEXT NOT NULL,
+        status TEXT NOT NULL,
+        error TEXT,
+        provider_message_id TEXT,
+        created_at TEXT NOT NULL,
+        sent_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_outbound_event ON outbound_messages(event_id);
+      CREATE INDEX IF NOT EXISTS idx_outbound_account ON outbound_messages(account_id);
+    `);
+    setVersion(6);
   }
 }

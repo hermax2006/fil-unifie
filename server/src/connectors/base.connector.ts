@@ -21,6 +21,23 @@ export interface PollResult {
   cursor?: string;
 }
 
+/** Contexte fourni pour répondre à un événement depuis le fil. */
+export interface ReplyContext {
+  accountId: string;
+  config: Record<string, unknown>;
+  tokens: Record<string, unknown> | null;
+  to: string[];
+  subject?: string;
+  body: string;
+  /** Message-ID d'origine, pour le threading côté client mail. */
+  inReplyTo?: string;
+  references?: string[];
+}
+
+export interface ReplyResult {
+  messageId?: string;
+}
+
 /** Chaque app du catalogue est un module qui étend cette classe. */
 export abstract class BaseConnector {
   abstract readonly info: ConnectorInfo;
@@ -47,7 +64,10 @@ export abstract class BaseConnector {
   /** Vérifie la connexion/configuration sans récupérer ni stocker d'événements. */
   test?(_ctx: PollContext): Promise<unknown>;
 
-  // À ajouter plus tard : connect(), reply().
+  /** Envoie une réponse à l'événement (email, Slack, Telegram...). */
+  reply?(_ctx: ReplyContext): Promise<ReplyResult>;
+
+  // À ajouter plus tard : connect().
 }
 
 export function header(req: WebhookRequest, name: string): string | undefined {

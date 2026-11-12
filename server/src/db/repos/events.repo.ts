@@ -19,8 +19,8 @@ export function addEventRow(e: UnifiedEvent & { userId?: string | null; dedupKey
   const dedupKey = e.dedupKey ?? makeDedupKey(e);
   const stmt = db.prepare(`
     INSERT INTO events (
-      id, user_id, account_id, connector_id, external_id, dedup_key, kind, author_json, title, body, url, occurred_at, received_at, read_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      id, user_id, account_id, connector_id, connection_id, external_id, dedup_key, kind, author_json, title, body, url, occurred_at, received_at, read_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const attachmentStmt = db.prepare(`
     INSERT INTO event_attachments (id, event_id, filename, content_type, size)
@@ -32,6 +32,7 @@ export function addEventRow(e: UnifiedEvent & { userId?: string | null; dedupKey
       e.userId ?? null,
       e.accountId,
       e.connector,
+      e.connectionId ?? null,
       e.externalId ?? null,
       dedupKey,
       e.kind,
@@ -63,6 +64,9 @@ export interface EventFilters {
   connector?: string;
   kind?: string;
   read?: 'all' | 'read' | 'unread';
+  search?: string;
+  /** Curseur de pagination : ne renvoie que les événements reçus avant cette date ISO. */
+  before?: string;
 }
 
 export function listEvents(limit = 100, userId?: string, filters: EventFilters = {}): UnifiedEvent[] {
@@ -83,10 +87,19 @@ export function listEvents(limit = 100, userId?: string, filters: EventFilters =
   }
   if (filters.read === 'read') where.push('read_at IS NOT NULL');
   if (filters.read === 'unread') where.push('read_at IS NULL');
+  if (filters.search) {
+    where.push('(title LIKE ? OR body LIKE ? OR author_json LIKE ?)');
+    const like = `%${filters.search}%`;
+    params.push(like, like, like);
+  }
+  if (filters.before) {
+    where.push('received_at < ?');
+    params.push(filters.before);
+  }
 
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
   const stmt = db.prepare(`
-    SELECT id, connector_id as connector, account_id as accountId, external_id as externalId, kind, author_json, title, body, url, occurred_at as occurredAt, received_at as receivedAt, read_at as readAt
+    SELECT id, connector_id as connector, account_id as accountId, connection_id as connectionId, external_id as externalId, kind, author_json, title, body, url, occurred_at as occurredAt, received_at as receivedAt, read_at as readAt
     FROM events
     ${whereSql}
     ORDER BY received_at DESC
@@ -120,6 +133,7 @@ export function listEvents(limit = 100, userId?: string, filters: EventFilters =
     id: r.id,
     connector: r.connector,
     accountId: r.accountId,
+    connectionId: r.connectionId ?? undefined,
     externalId: r.externalId ?? undefined,
     kind: r.kind,
     author: r.author_json ? JSON.parse(r.author_json) : undefined,
@@ -150,3 +164,58 @@ export function markEventRead(id: string, userId?: string): boolean {
  * - addEventRow() : insère en BDD, retourne false si doublon (UNIQUE sur dedup_key)
  * - listEvents() : récupère les événements, filtrable par utilisateur
  */
+
+
+export function countUnread(userId?: string): number {
+  const stmt = userId
+    ? db.prepare('SELECT COUNT(*) as c FROM events WHERE read_at IS NULL AND (user_id = ? OR user_id IS NULL)')
+    : db.prepare('SELECT COUNT(*) as c FROM events WHERE read_at IS NULL');
+  const row = (userId ? stmt.get(userId) : stmt.get()) as { c: number };
+  return row.c;
+}
+
+export function markAllRead(userId?: string): number {
+  const now = new Date().toISOString();
+  const stmt = userId
+    ? db.prepare('UPDATE events SET read_at = ? WHERE read_at IS NULL AND (user_id = ? OR user_id IS NULL)')
+    : db.prepare('UPDATE events SET read_at = ? WHERE read_at IS NULL');
+  return (userId ? stmt.run(now, userId) : stmt.run(now)).changes;
+}
+
+
+export interface EventForReply {
+  id: string;
+  accountId: string;
+  connector: string;
+  connectionId?: string;
+  externalId?: string;
+  title?: string;
+  author?: { id?: string; name: string };
+  userId?: string;
+}
+
+/** Récupère un événement avec les champs nécessaires pour y répondre. */
+export function getEventForReply(id: string, userId?: string): EventForReply | undefined {
+  const row = (userId
+    ? db.prepare(`
+        SELECT id, account_id as accountId, connector_id as connector, connection_id as connectionId,
+               external_id as externalId, title, author_json, user_id as userId
+        FROM events WHERE id = ? AND (user_id = ? OR user_id IS NULL)
+      `).get(id, userId)
+    : db.prepare(`
+        SELECT id, account_id as accountId, connector_id as connector, connection_id as connectionId,
+               external_id as externalId, title, author_json, user_id as userId
+        FROM events WHERE id = ?
+      `).get(id)) as any;
+  if (!row) return undefined;
+  return {
+    id: row.id,
+    accountId: row.accountId,
+    connector: row.connector,
+    connectionId: row.connectionId ?? undefined,
+    externalId: row.externalId ?? undefined,
+    title: row.title ?? undefined,
+    author: row.author_json ? JSON.parse(row.author_json) : undefined,
+    userId: row.userId ?? undefined,
+  };
+}

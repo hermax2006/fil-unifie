@@ -244,7 +244,8 @@ Pour avancer concrètement dans l'immédiat:
 - [x] Route `PUT /api/connections/connector-connections/:id/tokens` (jamais réaffiché)
 - [x] UI : formulaire IMAP (hôte, port, utilisateur, mot de passe)
 - [x] Recherche IMAP `SINCE` avec marge d'un jour, max 20 messages, déduplication par Message-ID
-- [ ] Dossiers multiples, pièces jointes, OAuth Gmail/Outlook, envoi de réponses
+- [x] Dossiers multiples, pièces jointes, envoi de réponses
+- [ ] OAuth Gmail/Outlook
 
 ## BullMQ / Redis (fait)
 - [x] `QUEUE_DRIVER=bullmq` : Queue + Worker BullMQ (`ioredis`)
@@ -262,7 +263,7 @@ Pour avancer concrètement dans l'immédiat:
 - [x] API events : pièces jointes renvoyées avec chaque événement
 - [x] UI Fil : affichage des pièces jointes et de leur taille
 - [x] Webhook générique : accepte `attachments[]` (utile pour tests/intégrations)
-- [ ] Téléchargement des pièces jointes, OAuth Gmail/Outlook, envoi de réponses
+- [ ] Téléchargement des pièces jointes, OAuth Gmail/Outlook
 
 ## Bull Board + DLQ (fait)
 - [x] Dashboard `/admin/queues` (`@bull-board/express`) pour la file principale et la DLQ
@@ -279,3 +280,26 @@ Pour avancer concrètement dans l'immédiat:
 - [x] `trust proxy` en production, désactivation possible via `RATE_LIMIT_DISABLED`
 - [x] Bouton "Tester" IMAP : vérifie connexion + dossiers sans polling ni écriture
 - [ ] Hash des secrets webhook impossible (HMAC Slack), ils restent chiffrés AES-GCM
+
+## Fil : recherche, pagination, non-lus (fait)
+- [x] Recherche serveur `q` sur titre, corps et auteur (`GET /api/events?q=`)
+- [x] Pagination par curseur `before` + `limit` (bouton « Charger plus »)
+- [x] Compteur de non-lus (`GET /api/events/unread-count`) + badge UI
+- [x] Action « Tout marquer lu » (`POST /api/events/read-all`)
+- [x] Recherche débouncée côté UI, filtres connecteur/type/lu conservés
+- [x] SSE : mise à jour du compteur et insertion seulement si l'événement correspond aux filtres
+- [x] Tests repo : recherche, pagination, compteur, marquage global
+
+
+## Réponses email SMTP (fait)
+- [x] `BaseConnector.reply()` + `ReplyContext`/`ReplyResult` (extensible Slack/Telegram plus tard)
+- [x] `ImapConnector.reply()` via `nodemailer` (SMTP), mot de passe d'application réutilisé
+- [x] Config SMTP par connexion : `smtpHost`, `smtpPort`, `smtpSecure`, `smtpUser`, `from`
+- [x] Repli sur l'hôte/utilisateur/mot de passe IMAP si SMTP non renseigné
+- [x] En-têtes de threading `In-Reply-To` et `References` (Message-ID d'origine)
+- [x] Sujet `Re:` sans empilement (`replySubject`)
+- [x] Table `outbound_messages` (migration v6) : statut `pending|sent|failed`, erreur, Message-ID fournisseur
+- [x] Route `POST /api/events/:id/reply` (Zod, auth, vérifie connexion active et destinataire)
+- [x] Lien événement → connexion (`events.connection_id`, migration v6) pour retrouver la config SMTP
+- [x] UI : bouton « Répondre », formulaire destinataire/objet/message, statut d'envoi
+- [x] Tests : sujet, refus sans config, envoi réel contre un serveur SMTP local (`smtp-server`)

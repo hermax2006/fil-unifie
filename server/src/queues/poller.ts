@@ -57,7 +57,7 @@ export async function pollConnection(row: PollingConnectionRow): Promise<number>
     });
 
     for (const event of result.events) {
-      await enqueueEvent({ ...event, connector: connector.info.id, accountId: row.account_id }, row.user_id);
+      await enqueueEvent({ ...event, connector: connector.info.id, accountId: row.account_id, connectionId: row.id }, row.user_id);
     }
 
     const finishedAt = new Date().toISOString();

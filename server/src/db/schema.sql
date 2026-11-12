@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS events (
   user_id TEXT,
   account_id TEXT NOT NULL,
   connector_id TEXT NOT NULL,
+  connection_id TEXT,
   external_id TEXT,
   dedup_key TEXT NOT NULL UNIQUE,
   kind TEXT NOT NULL,
@@ -76,6 +77,7 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE INDEX IF NOT EXISTS idx_events_received_at ON events(received_at DESC);
 CREATE INDEX IF NOT EXISTS idx_events_account ON events(account_id);
 CREATE INDEX IF NOT EXISTS idx_events_user ON events(user_id);
+CREATE INDEX IF NOT EXISTS idx_events_connection ON events(connection_id);
 CREATE INDEX IF NOT EXISTS idx_events_dedup ON events(dedup_key);
 
 -- Métadonnées de pièces jointes (pas le contenu binaire)
@@ -124,3 +126,24 @@ CREATE TABLE IF NOT EXISTS sync_runs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_sync_runs_connection ON sync_runs(connection_id, started_at DESC);
+
+
+-- Réponses sortantes (email SMTP, et futures réponses Slack/Telegram)
+CREATE TABLE IF NOT EXISTS outbound_messages (
+  id TEXT PRIMARY KEY,
+  event_id TEXT,
+  connection_id TEXT,
+  account_id TEXT NOT NULL,
+  user_id TEXT,
+  to_json TEXT NOT NULL,
+  subject TEXT,
+  body TEXT NOT NULL,
+  status TEXT NOT NULL,
+  error TEXT,
+  provider_message_id TEXT,
+  created_at TEXT NOT NULL,
+  sent_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_outbound_event ON outbound_messages(event_id);
+CREATE INDEX IF NOT EXISTS idx_outbound_account ON outbound_messages(account_id);

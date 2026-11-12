@@ -80,3 +80,13 @@ export function getConnection(id: string, accountId: string): ConnectorConnectio
   return db.prepare('SELECT * FROM connector_connections WHERE id = ? AND account_id = ?')
     .get(id, accountId) as ConnectorConnectionRow | undefined;
 }
+
+/** Connexion active d'un type donné pour un compte (ex. IMAP pour répondre). */
+export function findActiveConnection(accountId: string, connectorId: string): ConnectorConnectionRow | undefined {
+  return db.prepare(`
+    SELECT * FROM connector_connections
+    WHERE account_id = ? AND connector_id = ? AND active = 1
+    ORDER BY updated_at DESC
+    LIMIT 1
+  `).get(accountId, connectorId) as ConnectorConnectionRow | undefined;
+}

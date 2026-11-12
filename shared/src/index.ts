@@ -14,6 +14,7 @@ export interface UnifiedEvent {
   id: string;
   connector: string;          // ex. "telegram"
   accountId: string;          // compte connecté de l'utilisateur
+  connectionId?: string;      // connexion source (polling) pour répondre/mettre à jour
   externalId?: string;        // identifiant d'origine dans l'app source
   kind: EventKind;
   author?: { id?: string; name: string };

@@ -1,7 +1,8 @@
 import type { EventAttachment, NewEvent } from '@fil/shared';
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
-import { BaseConnector, type PollContext, type PollResult, type WebhookRequest } from './base.connector.js';
+import nodemailer from 'nodemailer';
+import { BaseConnector, type PollContext, type PollResult, type WebhookRequest, type ReplyContext, type ReplyResult } from './base.connector.js';
 
 function asString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
@@ -40,6 +41,26 @@ function connectionFrom(ctx: PollContext) {
     port: asNumber(ctx.config.port, 993),
     secure: ctx.config.secure !== false,
   };
+}
+
+/** Sujet de réponse sans empiler les « Re: ». */
+export function replySubject(original?: string): string {
+  const title = original?.trim();
+  if (!title) return 'Re: (sans objet)';
+  return /^re\s*:/i.test(title) ? title : `Re: ${title}`;
+}
+
+function smtpFrom(ctx: ReplyContext) {
+  const host = asString(ctx.config.smtpHost) ?? asString(ctx.config.host);
+  const user = asString(ctx.config.smtpUser) ?? asString(ctx.config.user);
+  const pass = asString(ctx.tokens?.smtpPass) ?? asString(ctx.tokens?.pass);
+  if (!host) throw new Error('SMTP: config.smtpHost ou config.host requis');
+  if (!user) throw new Error('SMTP: config.smtpUser ou config.user requis');
+  if (!pass) throw new Error('SMTP: mot de passe requis (tokens.smtpPass ou tokens.pass)');
+  const port = asNumber(ctx.config.smtpPort, 465);
+  const secure = ctx.config.smtpSecure !== undefined ? !!ctx.config.smtpSecure : port === 465;
+  const from = asString(ctx.config.from) ?? asString(ctx.config.smtpFrom) ?? user;
+  return { host, port, secure, user, pass, from };
 }
 
 function makeClient(info: ReturnType<typeof connectionFrom>): ImapFlow {
@@ -93,6 +114,33 @@ export class ImapConnector extends BaseConnector {
         // Connexion déjà fermée.
       }
     }
+  }
+
+  async reply(ctx: ReplyContext): Promise<ReplyResult> {
+    const smtp = smtpFrom(ctx);
+    const to = ctx.to.map(asString).filter((v): v is string => !!v);
+    if (to.length === 0) throw new Error('SMTP: destinataire requis');
+
+    const transporter = nodemailer.createTransport({
+      host: smtp.host,
+      port: smtp.port,
+      secure: smtp.secure,
+      auth: { user: smtp.user, pass: smtp.pass },
+      connectionTimeout: 15000,
+      greetingTimeout: 15000,
+      socketTimeout: 30000,
+    });
+
+    const info = await transporter.sendMail({
+      from: smtp.from,
+      to,
+      subject: ctx.subject ?? replySubject(),
+      text: ctx.body,
+      inReplyTo: ctx.inReplyTo,
+      references: ctx.references?.length ? ctx.references : ctx.inReplyTo,
+    });
+
+    return { messageId: info.messageId };
   }
 
   async poll(ctx: PollContext): Promise<PollResult> {
