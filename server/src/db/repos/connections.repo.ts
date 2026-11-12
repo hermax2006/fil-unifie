@@ -12,17 +12,18 @@ export interface ConnectorConnectionRow {
   updated_at: string;
 }
 
-export function upsertConnection(accountId: string, connectorId: string, config?: unknown) {
-  const existing = db.prepare('SELECT id FROM connector_connections WHERE account_id = ? AND connector_id = ?').get(accountId, connectorId) as { id: string } | undefined;
-  const now = new Date().toISOString();
-  if (existing) {
-    db.prepare(`UPDATE connector_connections SET config_json = ?, active = 1, updated_at = ? WHERE id = ?`).run(config ? JSON.stringify(config) : null, now, existing.id);
-    return existing.id;
-  }
+/** Crée une nouvelle connexion ; plusieurs connexions par connecteur sont autorisées. */
+export function createConnection(accountId: string, connectorId: string, config?: unknown): string {
   const id = randomBytes(16).toString('hex');
+  const now = new Date().toISOString();
   db.prepare(`INSERT INTO connector_connections (id, account_id, connector_id, active, config_json, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?, ?)`)
     .run(id, accountId, connectorId, config ? JSON.stringify(config) : null, now, now);
   return id;
+}
+
+export function deleteConnection(id: string, accountId: string): boolean {
+  const info = db.prepare('DELETE FROM connector_connections WHERE id = ? AND account_id = ?').run(id, accountId);
+  return info.changes > 0;
 }
 
 export function listConnections(accountId: string): ConnectorConnectionRow[] {

@@ -6,7 +6,8 @@ import { sseHandler } from '../sse/index.js';
 import { requireAuth, attachUser, type AuthRequest } from '../auth/middleware.js';
 import { validateBody, validateQuery } from '../utils/validate.js';
 import { getConnection, findActiveConnection } from '../db/repos/connections.repo.js';
-import { createOutbound, markOutboundSent, markOutboundFailed } from '../db/repos/outbound.repo.js';
+import { createOutbound, markOutboundSent, markOutboundFailed, listOutboundForEvent, listOutboundForAccounts } from '../db/repos/outbound.repo.js';
+import { listAccountsForUser } from '../db/repos/accounts.repo.js';
 import { decryptToken } from '../crypto/tokens.js';
 import { replySubject } from '../connectors/imap.connector.js';
 
@@ -118,6 +119,28 @@ apiRouter.post('/events/:id/reply', isProd ? requireAuth : attachUser, validateB
     markOutboundFailed(outboundId, message);
     return void res.status(502).json({ error: message });
   }
+});
+
+apiRouter.get('/events/:id/outbound', isProd ? requireAuth : attachUser, (req: AuthRequest, res) => {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const event = getEventForReply(id, req.userId);
+  if (!event) return void res.status(404).json({ error: 'événement introuvable' });
+  return void res.json(listOutboundForEvent(id, req.userId));
+});
+
+const outboundQuery = z.object({
+  limit: z.coerce.number().int().min(1).max(200).optional().default(50),
+  accountId: z.string().optional(),
+});
+
+apiRouter.get('/outbound', isProd ? requireAuth : attachUser, validateQuery(outboundQuery), (req: AuthRequest, res) => {
+  const q = (req as any).validatedQuery as z.infer<typeof outboundQuery>;
+  if (req.userId) {
+    const accounts = listAccountsForUser(req.userId).map((a) => a.id);
+    return void res.json(listOutboundForAccounts(accounts, q.limit));
+  }
+  if (!isProd && q.accountId) return void res.json(listOutboundForAccounts([q.accountId], q.limit));
+  return void res.status(400).json({ error: 'accountId requis' });
 });
 
 apiRouter.post('/events/:id/read', isProd ? requireAuth : attachUser, (req: AuthRequest, res) => {

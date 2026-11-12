@@ -303,3 +303,14 @@ Pour avancer concrètement dans l'immédiat:
 - [x] Lien événement → connexion (`events.connection_id`, migration v6) pour retrouver la config SMTP
 - [x] UI : bouton « Répondre », formulaire destinataire/objet/message, statut d'envoi
 - [x] Tests : sujet, refus sans config, envoi réel contre un serveur SMTP local (`smtp-server`)
+
+## Durcissement backend (fait)
+- [x] SSE sécurisé en prod : `requireAuth` implicite (`401` sans session), diffusion filtrée par utilisateur
+- [x] Validation Zod par connecteur (`connectors/schemas.ts`) : IMAP (hôte/utilisateur requis, champs stricts), RSS (URL valide)
+- [x] Validation appliquée à la création ET à la modification de connexion (`POST`/`PATCH`)
+- [x] Mot de passe IMAP obligatoire (`tokens.pass`) lors de l'enregistrement des tokens
+- [x] Multi-connexions par connecteur (migration v7 : suppression de `UNIQUE(account_id, connector_id)` via rebuild SQLite)
+- [x] `POST /connector-connections` crée une nouvelle connexion ; `DELETE /connector-connections/:id` supprime (sync_state/sync_runs purgés par cascade)
+- [x] UI : bouton « Supprimer » par connexion, ajout sans écrasement
+- [x] API réponses sortantes : `GET /api/events/:id/outbound` (historique par événement) et `GET /api/outbound` (vue « envoyés », scoping par comptes de l'utilisateur en prod)
+- [x] Tests : schémas, multi-connexions, historique outbound (33/33)

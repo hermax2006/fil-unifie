@@ -137,5 +137,47 @@ export function migrate() {
       CREATE INDEX IF NOT EXISTS idx_outbound_account ON outbound_messages(account_id);
     `);
     setVersion(6);
+    current = 6;
+  }
+
+  // v7: autoriser plusieurs connexions par connecteur (ex. deux boîtes IMAP).
+  // SQLite ne peut pas supprimer une contrainte UNIQUE : on reconstruit la table.
+  if (current < 7) {
+    const table = db.prepare(
+      "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'connector_connections'"
+    ).get() as { sql: string } | undefined;
+    if (table?.sql?.includes('UNIQUE(account_id, connector_id)')) {
+      db.pragma('foreign_keys = OFF');
+      try {
+        db.exec(`
+          BEGIN;
+          CREATE TABLE connector_connections_new (
+            id TEXT PRIMARY KEY,
+            account_id TEXT NOT NULL,
+            connector_id TEXT NOT NULL,
+            active INTEGER NOT NULL DEFAULT 1,
+            config_json TEXT,
+            encrypted_tokens_json TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+          );
+          INSERT INTO connector_connections_new (
+            id, account_id, connector_id, active, config_json, encrypted_tokens_json, created_at, updated_at
+          )
+          SELECT id, account_id, connector_id, active, config_json, encrypted_tokens_json, created_at, updated_at
+          FROM connector_connections;
+          DROP TABLE connector_connections;
+          ALTER TABLE connector_connections_new RENAME TO connector_connections;
+          COMMIT;
+        `);
+      } finally {
+        db.pragma('foreign_keys = ON');
+      }
+      db.exec('CREATE INDEX IF NOT EXISTS idx_connector_connections_account ON connector_connections(account_id)');
+      const violations = db.pragma('foreign_key_check') as unknown[];
+      if (violations.length > 0) throw new Error('foreign_key_check a échoué après la migration v7');
+    }
+    setVersion(7);
   }
 }

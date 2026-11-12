@@ -131,6 +131,12 @@ export function Connections({ user }: { user?: User }) {
     }
   }
 
+  async function deleteConnection(id: string) {
+    const q = user ? '' : `?accountId=${encodeURIComponent(accountId)}`;
+    await fetch(`/api/connections/connector-connections/${id}${q}`, { method: 'DELETE', credentials: 'include' });
+    loadConnections();
+  }
+
   async function toggleConnection(id: string, active: boolean) {
     await fetch(`/api/connections/connector-connections/${id}`, {
       method: 'PATCH',
@@ -421,7 +427,7 @@ export function Connections({ user }: { user?: User }) {
           </>
         )}
         <button className="btn" onClick={saveConnection} disabled={connSaving}>
-          {connSaving ? 'Enregistrement...' : 'Ajouter / mettre à jour'}
+          {connSaving ? 'Enregistrement...' : 'Ajouter la connexion'}
         </button>
       </div>
 
@@ -459,6 +465,7 @@ export function Connections({ user }: { user?: User }) {
                 <button className="btn small" onClick={() => toggleConnection(c.id, !c.active)}>
                   {c.active ? 'Mettre en pause' : 'Réactiver'}
                 </button>
+                <button className="btn small danger" onClick={() => deleteConnection(c.id)}>Supprimer</button>
               </div>
             </li>
           ))}

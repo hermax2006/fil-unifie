@@ -31,8 +31,7 @@ CREATE TABLE IF NOT EXISTS connector_connections (
   encrypted_tokens_json TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
-  FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE,
-  UNIQUE(account_id, connector_id)
+  FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_connector_connections_account ON connector_connections(account_id);

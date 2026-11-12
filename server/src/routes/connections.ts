@@ -7,7 +7,8 @@ import { generateWebhookSecret, encryptWebhookSecret } from '../webhooks/secret-
 import { findOrCreateAccountForUser } from '../db/repos/accounts.repo.js';
 import { validateBody } from '../utils/validate.js';
 import { registry } from '../connectors/registry.js';
-import { updateConnection, setConnectionTokens, getConnection } from '../db/repos/connections.repo.js';
+import { updateConnection, setConnectionTokens, getConnection, createConnection, deleteConnection } from '../db/repos/connections.repo.js';
+import { validateConnectorConfig } from '../connectors/schemas.js';
 import { getSyncState, getLatestSyncRun } from '../db/repos/sync.repo.js';
 import { encryptToken, decryptToken } from '../crypto/tokens.js';
 
@@ -109,9 +110,24 @@ connectionsRouter.post('/connector-connections', isProd ? requireAuth : attachUs
   const accountId = resolveAccountId(req, bodyAccountId);
   if (!accountId) return res.status(400).json({ error: 'accountId requis' });
   if (!registry.get(connectorId)) return res.status(404).json({ error: 'connecteur inconnu' });
-  const { upsertConnection } = await import('../db/repos/connections.repo.js');
-  const id = upsertConnection(accountId, connectorId, config);
+
+  // Validation Zod propre au connecteur (IMAP, RSS...).
+  const check = validateConnectorConfig(connectorId, config);
+  if (!check.ok) return res.status(400).json({ error: 'config invalide', details: check.details });
+
+  // Plusieurs connexions par connecteur sont autorisées (ex. deux boîtes mail).
+  const id = createConnection(accountId, connectorId, config);
   return res.json({ ok: true, id });
+});
+
+// Supprime une connexion (sync_state/sync_runs sont purgés par cascade).
+connectionsRouter.delete('/connector-connections/:id', isProd ? requireAuth : attachUser, (req: AuthRequest, res) => {
+  const accountId = resolveAccountId(req, (req.query.accountId as string) || undefined);
+  if (!accountId) return res.status(400).json({ error: 'accountId requis' });
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const ok = deleteConnection(id, accountId);
+  if (!ok) return res.status(404).json({ error: 'connexion introuvable' });
+  return res.json({ ok: true });
 });
 
 connectionsRouter.patch('/connector-connections/:id', isProd ? requireAuth : attachUser, validateBody(z.object({
@@ -123,8 +139,13 @@ connectionsRouter.patch('/connector-connections/:id', isProd ? requireAuth : att
   const accountId = resolveAccountId(req, bodyAccountId);
   if (!accountId) return res.status(400).json({ error: 'accountId requis' });
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const row = getConnection(id, accountId);
+  if (!row) return res.status(404).json({ error: 'connexion introuvable' });
+  if (config !== undefined) {
+    const check = validateConnectorConfig(row.connector_id, config);
+    if (!check.ok) return res.status(400).json({ error: 'config invalide', details: check.details });
+  }
   const ok = updateConnection(id, accountId, { active, config });
-  if (!ok) return res.status(404).json({ error: 'connexion introuvable' });
   return res.json({ ok: true });
 });
 
@@ -137,9 +158,13 @@ connectionsRouter.put('/connector-connections/:id/tokens', isProd ? requireAuth 
   const accountId = resolveAccountId(req, bodyAccountId);
   if (!accountId) return res.status(400).json({ error: 'accountId requis' });
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const row = getConnection(id, accountId);
+  if (!row) return res.status(404).json({ error: 'connexion introuvable' });
+  if (row.connector_id === 'imap' && !(typeof tokens?.pass === 'string' && tokens.pass.trim())) {
+    return res.status(400).json({ error: 'mot de passe IMAP requis (tokens.pass)' });
+  }
   const encrypted = encryptToken(JSON.stringify(tokens));
-  const ok = setConnectionTokens(id, accountId, encrypted);
-  if (!ok) return res.status(404).json({ error: 'connexion introuvable' });
+  setConnectionTokens(id, accountId, encrypted);
   return res.json({ ok: true });
 });
 

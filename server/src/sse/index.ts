@@ -3,6 +3,8 @@ import type { UnifiedEvent } from '@fil/shared';
 import { attachUser, type AuthRequest } from '../auth/middleware.js';
 import { findAccountById } from '../db/repos/accounts.repo.js';
 
+const isProd = process.env.NODE_ENV === 'production';
+
 /**
  * Flux temps réel (SSE).
  * - En dev sans auth, broadcast global (comme avant).
@@ -13,6 +15,11 @@ const clients = new Set<Client>();
 
 export function sseHandler(req: AuthRequest, res: Response): void {
   attachUser(req, res, () => {
+    // En prod, pas de session = pas de flux : on refuse avant d'ouvrir quoi que ce soit.
+    if (isProd && !req.userId) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      return void res.end(JSON.stringify({ error: 'non authentifié' }));
+    }
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
@@ -37,7 +44,9 @@ export function broadcast(e: UnifiedEvent): void {
     ownerUserId = acc?.user_id;
   }
   for (const c of clients) {
-    // Si pas de userId connu (dev/legacy), on diffuse. Sinon on filtre.
+    // En prod, un client sans session n'a pas pu se connecter ; par sécurité on saute aussi ici.
+    if (isProd && !c.userId) continue;
+    // En dev sans userId connu (legacy), on diffuse. Sinon on filtre par utilisateur.
     if (!c.userId || !ownerUserId || c.userId === ownerUserId) {
       c.res.write(data);
     }
