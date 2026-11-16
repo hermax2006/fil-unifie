@@ -21,7 +21,8 @@ app.use(cors({
   origin(origin, cb) {
     if (!origin) return cb(null, true); // curl/server-to-server
     if (config.allowedOrigins.includes(origin)) return cb(null, true);
-    if (!config.isProd && /^http:\/\/localhost:\d+$/.test(origin)) return cb(null, true);
+    // En dev on accepte localhost et 127.0.0.1 sur n'importe quel port (Vite, etc.).
+    if (!config.isProd && /^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin)) return cb(null, true);
     return cb(new Error('CORS: origine non autorisée'));
   },
   credentials: true,

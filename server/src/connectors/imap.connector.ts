@@ -30,7 +30,9 @@ function mailboxesFrom(config: Record<string, unknown>): string[] {
 function connectionFrom(ctx: PollContext) {
   const host = asString(ctx.config.host);
   const user = asString(ctx.config.user);
-  const pass = asString(ctx.tokens?.pass);
+  // Google affiche le mot de passe d'application avec des espaces (« xxxx xxxx xxxx xxxx ») :
+  // on les retire automatiquement pour éviter un échec d'authentification bête.
+  const pass = (asString(ctx.tokens?.pass) ?? '').replace(/\s+/g, '');
   if (!host) throw new Error('IMAP: config.host requis');
   if (!user) throw new Error('IMAP: config.user requis');
   if (!pass) throw new Error('IMAP: tokens.pass requis (mot de passe d\'application)');
@@ -53,7 +55,7 @@ export function replySubject(original?: string): string {
 function smtpFrom(ctx: ReplyContext) {
   const host = asString(ctx.config.smtpHost) ?? asString(ctx.config.host);
   const user = asString(ctx.config.smtpUser) ?? asString(ctx.config.user);
-  const pass = asString(ctx.tokens?.smtpPass) ?? asString(ctx.tokens?.pass);
+  const pass = ((asString(ctx.tokens?.smtpPass) ?? asString(ctx.tokens?.pass)) ?? '').replace(/\s+/g, '');
   if (!host) throw new Error('SMTP: config.smtpHost ou config.host requis');
   if (!user) throw new Error('SMTP: config.smtpUser ou config.user requis');
   if (!pass) throw new Error('SMTP: mot de passe requis (tokens.smtpPass ou tokens.pass)');
