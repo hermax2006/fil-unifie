@@ -138,6 +138,22 @@ export function Connections({ user }: { user?: User }) {
     loadConnections();
   }
 
+  async function changePassword(id: string) {
+    const pass = window.prompt("Nouveau mot de passe d'application (chiffré en BDD, jamais réaffiché)");
+    if (!pass?.trim()) return;
+    const res = await fetch(`/api/connections/connector-connections/${id}/tokens`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ tokens: { pass: pass.trim() }, accountId }),
+    });
+    const data = await readJson(res);
+    setConnTestResults((prev) => ({
+      ...prev,
+      [id]: res.ok ? 'OK : mot de passe mis à jour — reclique Tester' : `Erreur : ${data.error || res.status}`,
+    }));
+  }
+
   async function toggleConnection(id: string, active: boolean) {
     await fetch(`/api/connections/connector-connections/${id}`, {
       method: 'PATCH',
@@ -462,6 +478,9 @@ export function Connections({ user }: { user?: User }) {
                   <button className="btn small" onClick={() => testConnection(c.id)} disabled={connTestingId === c.id}>
                     {connTestingId === c.id ? 'Test...' : 'Tester'}
                   </button>
+                )}
+                {c.connectorId === 'imap' && c.hasTokens && (
+                  <button className="btn small" onClick={() => changePassword(c.id)}>Changer le mot de passe</button>
                 )}
                 <button className="btn small" onClick={() => toggleConnection(c.id, !c.active)}>
                   {c.active ? 'Mettre en pause' : 'Réactiver'}

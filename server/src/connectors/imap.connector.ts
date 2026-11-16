@@ -63,6 +63,13 @@ function smtpFrom(ctx: ReplyContext) {
   return { host, port, secure, user, pass, from };
 }
 
+/** Rend les erreurs IMAP lisibles : imapflow renvoie « Command failed » sans le détail du serveur. */
+function imapError(err: unknown): Error {
+  const e = err as { message?: string; response?: string; text?: string };
+  const detail = e?.response ?? e?.text;
+  return new Error(detail ? `IMAP: ${e.message} — ${detail}` : `IMAP: ${e.message ?? String(err)}`);
+}
+
 function makeClient(info: ReturnType<typeof connectionFrom>): ImapFlow {
   return new ImapFlow({
     host: info.host,
@@ -105,12 +112,18 @@ export class ImapConnector extends BaseConnector {
     const info = connectionFrom(ctx);
     const configured = mailboxesFrom(ctx.config);
     const client = makeClient(info);
+    // Selon le serveur, l'échec remonte au connect() (rejet) ou plus tard
+    // (socket coupée -> « Connection not available ») : on garde l'erreur d'origine.
+    let clientError: unknown = null;
+    client.on('error', (err) => { clientError = err; });
     try {
       await client.connect();
       const list = await client.list();
       const mailboxes = list.map((m) => m.path);
       const missing = configured.filter((m) => !mailboxes.includes(m));
       return { ok: true, configured, mailboxes, missing };
+    } catch (err) {
+      throw imapError(clientError ?? err);
     } finally {
       try {
         await client.logout();
