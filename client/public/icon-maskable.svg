@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#6d4aff"/>
+  <!-- version « maskable » : le dessin est réduit et centré (zone de sécurité) -->
+  <g stroke="#ffffff" stroke-width="28" stroke-linecap="round" fill="none">
+    <path d="M150 190 C 230 190, 230 256, 290 256"/>
+    <path d="M150 256 L 290 256"/>
+    <path d="M150 322 C 230 322, 230 256, 290 256"/>
+  </g>
+  <circle cx="320" cy="256" r="34" fill="#ffffff"/>
+</svg>

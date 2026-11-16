@@ -1,26 +1,37 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { UnifiedEvent } from '@fil/shared';
 import { readJson } from '../api.js';
+import { EventItem } from './EventItem.js';
+import { notify, permission, request } from '../notifications.js';
+import { NotificationsToggle } from './ThemeToggle.js';
+
+/** Filtres persistés : l'utilisateur retrouve son filtel au retour. */
+type Filters = { connector: string; kind: string; read: 'all' | 'read' | 'unread' };
+const FILTERS_KEY = 'feed-filters';
+
+function loadFilters(): Filters {
+  try {
+    const raw = JSON.parse(localStorage.getItem(FILTERS_KEY) ?? '{}');
+    return {
+      connector: typeof raw.connector === 'string' ? raw.connector : '',
+      kind: typeof raw.kind === 'string' ? raw.kind : '',
+      read: raw.read === 'read' || raw.read === 'unread' ? raw.read : 'all',
+    };
+  } catch {
+    return { connector: '', kind: '', read: 'all' };
+  }
+}
 
 const PAGE_SIZE = 50;
 
-function timeAgo(iso: string) {
-  const diff = Date.now() - new Date(iso).getTime();
-  const s = Math.floor(diff / 1000);
-  if (s < 60) return "à l'instant";
-  const m = Math.floor(s / 60);
-  if (m < 60) return `il y a ${m} min`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `il y a ${h}h`;
-  const d = Math.floor(h / 24);
-  return `il y a ${d}j`;
-}
-
 export function Feed() {
   const [events, setEvents] = useState<UnifiedEvent[]>([]);
-  const [connector, setConnector] = useState('');
-  const [kind, setKind] = useState('');
-  const [read, setRead] = useState<'all' | 'read' | 'unread'>('all');
+  const [connector, setConnector] = useState(() => loadFilters().connector);
+  const [kind, setKind] = useState(() => loadFilters().kind);
+  const [read, setRead] = useState<'all' | 'read' | 'unread'>(() => loadFilters().read);
+  const [notifState, setNotifState] = useState<string>(() => permission());
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [detailSignal, setDetailSignal] = useState(0);
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [unread, setUnread] = useState(0);
@@ -28,12 +39,36 @@ export function Feed() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [replyToId, setReplyToId] = useState<string | null>(null);
-  const [replyBody, setReplyBody] = useState('');
-  const [replySubject, setReplySubject] = useState('');
-  const [replyTo, setReplyTo] = useState('');
-  const [replySending, setReplySending] = useState(false);
-  const [replyStatus, setReplyStatus] = useState<Record<string, string>>({});
+
+  // Mémorise les filtres d'un chargement à l'autre.
+  useEffect(() => {
+    localStorage.setItem(FILTERS_KEY, JSON.stringify({ connector, kind, read }));
+  }, [connector, kind, read]);
+
+  // Raccourcis clavier : j/k naviguer, Entrée ouvrir, u marquer lu.
+  // On ignore les touches pendant la saisie dans un champ.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const t = e.target as HTMLElement | null;
+      if (t && ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName)) return;
+      if (events.length === 0) return;
+      const idx = selectedId ? events.findIndex((ev) => ev.id === selectedId) : -1;
+      if (e.key === 'j') {
+        const next = events[Math.min(idx + 1, events.length - 1)];
+        if (next) setSelectedId(next.id);
+      } else if (e.key === 'k') {
+        const prev = events[Math.max(idx - 1, 0)];
+        if (prev) setSelectedId(prev.id);
+      } else if (e.key === 'Enter' && selectedId) {
+        setDetailSignal((c) => c + 1);
+      } else if (e.key === 'u' && selectedId) {
+        void markRead(selectedId);
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [events, selectedId]);
 
   const buildQs = useCallback((before?: string) => {
     const qs = new URLSearchParams();
@@ -114,7 +149,13 @@ export function Feed() {
     es.onmessage = (ev) => {
       try {
         const e = JSON.parse(ev.data) as UnifiedEvent;
-        if (!e.readAt) setUnread((c) => c + 1);
+        if (!e.readAt) {
+          setUnread((c) => c + 1);
+          notify(
+            `Nouveau message — ${e.connector}`,
+            e.title || (e.body || '').slice(0, 120) || 'Nouveau contenu',
+          );
+        }
         setEvents((prev) => {
           if (prev.some((p) => p.id === e.id) || !matches(e)) return prev;
           return [e, ...prev];
@@ -154,44 +195,6 @@ export function Feed() {
     }
   }
 
-  function startReply(e: UnifiedEvent) {
-    setReplyToId(e.id);
-    setReplySubject(e.title ? (/^re\s*:/i.test(e.title) ? e.title : `Re: ${e.title}`) : 'Re: (sans objet)');
-    setReplyTo(e.author?.id ?? '');
-    setReplyBody('');
-    setReplyStatus((prev) => ({ ...prev, [e.id]: '' }));
-  }
-
-  function cancelReply() {
-    setReplyToId(null);
-    setReplyBody('');
-  }
-
-  async function sendReply(e: UnifiedEvent) {
-    setReplySending(true);
-    try {
-      const res = await fetch(`/api/events/${e.id}/reply`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          body: replyBody,
-          subject: replySubject.trim() || undefined,
-          to: replyTo.trim() || undefined,
-        }),
-      });
-      const data = await readJson(res);
-      if (!res.ok) throw new Error(data.error || `Erreur ${res.status}`);
-      setReplyStatus((prev) => ({ ...prev, [e.id]: 'OK : réponse envoyée' }));
-      setReplyToId(null);
-      setReplyBody('');
-    } catch (err: any) {
-      setReplyStatus((prev) => ({ ...prev, [e.id]: `Erreur : ${err.message}` }));
-    } finally {
-      setReplySending(false);
-    }
-  }
-
   return (
     <div className="feed-wrap">
       <div className="filters">
@@ -222,73 +225,38 @@ export function Feed() {
           <option value="read">Lus</option>
         </select>
         <button className="btn small" onClick={() => void load(true)} disabled={loading}>Actualiser</button>
+        {notifState !== 'granted' && notifState !== 'unsupported' && (
+          <button
+            className="btn small"
+            onClick={async () => setNotifState(await request())}
+            title="Recevoir une notification quand un message arrive, même si tu es sur un autre onglet"
+          >
+            🔔 Activer les notifications
+          </button>
+        )}
+        <NotificationsToggle />
         {unread > 0 && <span className="unread-badge">{unread} non lu{unread > 1 ? 's' : ''}</span>}
         {unread > 0 && <button className="btn small" onClick={markAllRead}>Tout marquer lu</button>}
       </div>
+
+      <p className="hint kb-hint">Raccourcis : <kbd>j</kbd>/<kbd>k</kbd> naviguer · <kbd>Entrée</kbd> ouvrir · <kbd>u</kbd> marquer lu</p>
 
       {error && <p className="error small">{error}</p>}
 
       {loading ? (
         <p className="empty">Chargement…</p>
       ) : events.length === 0 ? (
-        <p className="empty">Aucun événement pour l'instant.</p>
+        <p className="empty">Aucun événement pour l'instant. Ajoute une connexion dans l'onglet « Connexions » pour commencer.</p>
       ) : (
         <ul className="feed-list">
           {events.map((e) => (
-            <li key={e.id} className={`event ${e.readAt ? 'read' : 'unread'}`}>
-              <div className="event-header">
-                <span className="event-connector">{e.connector}</span>
-                <span className="event-time">{timeAgo(e.receivedAt)}</span>
-              </div>
-              {e.title && <div className="event-title">{e.title}</div>}
-              <div className="event-body">{e.body}</div>
-              {e.attachments && e.attachments.length > 0 && (
-                <div className="event-attachments">
-                  <span className="attachment-label">Pièces jointes :</span>
-                  {e.attachments.map((a, i) => (
-                    <span className="attachment" key={`${a.filename}-${i}`}>
-                      {a.filename}
-                      {a.size ? ` (${Math.max(1, Math.round(a.size / 1024))} Ko)` : ''}
-                    </span>
-                  ))}
-                </div>
-              )}
-              <div className="event-footer">
-                {e.author?.name && <span className="event-author">— {e.author.name}</span>}
-                {e.url && <a className="event-link" href={e.url} target="_blank" rel="noreferrer">Ouvrir</a>}
-                {e.connector === 'imap' && replyToId !== e.id && (
-                  <button className="btn small" onClick={() => startReply(e)}>Répondre</button>
-                )}
-                {!e.readAt && <button className="btn small" onClick={() => markRead(e.id)}>Marquer lu</button>}
-                {replyStatus[e.id] && (
-                  <span className={replyStatus[e.id].startsWith('OK') ? 'success small' : 'error small'}>
-                    {replyStatus[e.id]}
-                  </span>
-                )}
-              </div>
-              {e.connector === 'imap' && replyToId === e.id && (
-                <div className="reply-form">
-                  <label>
-                    À
-                    <input value={replyTo} onChange={(ev) => setReplyTo(ev.target.value)} placeholder="destinataire@example.com" />
-                  </label>
-                  <label>
-                    Objet
-                    <input value={replySubject} onChange={(ev) => setReplySubject(ev.target.value)} />
-                  </label>
-                  <label>
-                    Réponse
-                    <textarea value={replyBody} onChange={(ev) => setReplyBody(ev.target.value)} rows={4} placeholder="Votre réponse…" />
-                  </label>
-                  <div className="result-actions">
-                    <button className="btn small" onClick={() => sendReply(e)} disabled={replySending || !replyBody.trim()}>
-                      {replySending ? 'Envoi…' : 'Envoyer'}
-                    </button>
-                    <button className="btn small" onClick={cancelReply} disabled={replySending}>Annuler</button>
-                  </div>
-                </div>
-              )}
-            </li>
+            <EventItem
+              key={e.id}
+              event={e}
+              onMarkRead={markRead}
+              selected={selectedId === e.id}
+              openSignal={selectedId === e.id ? detailSignal : 0}
+            />
           ))}
         </ul>
       )}
