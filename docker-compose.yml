@@ -1,0 +1,50 @@
+# Fil Unifié — production (SQLite + Redis).
+# Usage :
+#   cp .env.production.example .env.production   puis remplir les secrets
+#   docker compose --env-file .env.production up -d --build
+#
+# Devant ce stack, place un reverse proxy TLS (Caddy, nginx + certbot, Cloudflare...)
+# qui pointe vers le port 80 du service « web ».
+
+services:
+  server:
+    build: { context: ., dockerfile: server/Dockerfile }
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      # Clé de chiffrement des tokens (32+ caractères aléatoires). OBLIGATOIRE.
+      TOKEN_ENC_KEY: ${TOKEN_ENC_KEY}
+      # File d'événements : BullMQ sur Redis.
+      QUEUE_DRIVER: bullmq
+      REDIS_URL: redis://redis:6379
+      # Même origine via nginx : pas de CORS nécessaire, mais on l'explicite
+      # pour les appels directs si le domaine est servi ailleurs.
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+      # (trust proxy est activé automatiquement en NODE_ENV=production)
+    volumes:
+      - server-data:/app/data
+    depends_on:
+      - redis
+    # Pas de port exposé : seul nginx (web) parle au serveur.
+    expose:
+      - "4000"
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+
+  web:
+    build: { context: ., dockerfile: client/Dockerfile }
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    depends_on:
+      - server
+
+volumes:
+  server-data:
+  redis-data:

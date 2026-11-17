@@ -86,8 +86,8 @@ CREATE TABLE IF NOT EXISTS event_attachments (
   filename TEXT NOT NULL,
   content_type TEXT,
   size INTEGER,
+  meta_json TEXT,
   FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
-)  meta_json TEXT,
 );
 
 CREATE INDEX IF NOT EXISTS idx_event_attachments_event ON event_attachments(event_id);

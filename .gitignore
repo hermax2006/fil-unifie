@@ -37,3 +37,4 @@ redis-data
 # Temp
 tmp
 .cache
+.env.production
