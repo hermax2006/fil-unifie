@@ -4,15 +4,31 @@ import { Connections } from './components/Connections';
 import { AuthPanel } from './components/AuthPanel';
 import { ThemeToggle } from './components/ThemeToggle';
 import { Onboarding } from './components/Onboarding';
+import { RadialMenu } from './components/RadialMenu';
 import { useEffect, useState } from 'react';
 import { readJson } from './api.js';
 
 type User = { id: string; email: string; accountId?: string } | null;
 
+/** Noms lisibles des connecteurs dans le menu radial. */
+const APP_NAMES: Record<string, string> = {
+  imap: 'Mail',
+  rss: 'RSS',
+  telegram: 'Telegram',
+  slack: 'Slack',
+  webhook: 'Webhook',
+  generic: 'Webhook',
+};
+
 export function App() {
   const [tab, setTab] = useState<'feed' | 'apps' | 'connections'>('feed');
   const [user, setUser] = useState<User>(null);
   const [onboarding, setOnboarding] = useState<'loading' | 'show' | 'hide'>('loading');
+
+  // Menu radial (mobile) : filtre du fil par app + badges de non-lus.
+  const [userConnectors, setUserConnectors] = useState<string[]>([]);
+  const [unreadByConnector, setUnreadByConnector] = useState<Record<string, number>>({});
+  const [radialFilter, setRadialFilter] = useState<string | null>(null);
 
   async function refreshUser() {
     try {
@@ -29,6 +45,31 @@ export function App() {
     refreshUser();
   }, []);
 
+  // Après connexion : connexions (liste d'apps) + non-lus par connecteur.
+  // Rechargé aussi à chaque retour sur le Fil pour des badges à jour.
+  useEffect(() => {
+    if (!user?.accountId) {
+      setUserConnectors([]);
+      setUnreadByConnector({});
+      return;
+    }
+    fetch(`/api/connections/connector-connections?accountId=${user.accountId}`, { credentials: 'include' })
+      .then((res) => (res.ok ? readJson<any[]>(res) : []))
+      .then((list) => {
+        if (!Array.isArray(list)) return [];
+        setUserConnectors((prev) => {
+          const ids = list.map((c) => c.connectorId);
+          return prev.length === ids.length && prev.every((v, i) => v === ids[i]) ? prev : ids;
+        });
+        return list;
+      })
+      .catch(() => {});
+    fetch('/api/events/unread-count?group=connector', { credentials: 'include' })
+      .then((res) => (res.ok ? readJson<{ byConnector?: Record<string, number> }>(res) : null))
+      .then((data) => setUnreadByConnector(data?.byConnector ?? {}))
+      .catch(() => {});
+  }, [user, tab]);
+
   // Onboarding : montré une fois, tant qu'aucune connexion n'existe.
   useEffect(() => {
     if (!user?.accountId) return setOnboarding('loading');
@@ -38,6 +79,12 @@ export function App() {
       .then((list) => setOnboarding(Array.isArray(list) && list.length === 0 ? 'show' : 'hide'))
       .catch(() => setOnboarding('hide'));
   }, [user]);
+
+  const radialApps = Array.from(new Set(userConnectors)).map((c) => ({
+    id: c,
+    name: APP_NAMES[c] ?? c,
+    unread: unreadByConnector[c] ?? 0,
+  }));
 
   return (
     <div className="layout">
@@ -67,7 +114,7 @@ export function App() {
       <main className="content">
         {tab === 'feed' && (
           <section className="feed-wrap" aria-label="Fil">
-            <Feed />
+            <Feed connector={radialFilter ?? ''} onConnectorChange={setRadialFilter} />
           </section>
         )}
         {tab === 'apps' && (
@@ -81,6 +128,17 @@ export function App() {
           </section>
         )}
       </main>
+
+      {/* Menu radial (mobile uniquement, via CSS) : filtrer le fil par app */}
+      <RadialMenu
+        apps={radialApps}
+        activeId={radialFilter}
+        onSelect={(id) => {
+          setRadialFilter(id);
+          setTab('feed');
+        }}
+        onAdd={() => setTab('connections')}
+      />
 
       {/* Assistant de première connexion */}
       {onboarding === 'show' && user && (

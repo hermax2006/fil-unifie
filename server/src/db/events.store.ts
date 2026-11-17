@@ -1,5 +1,5 @@
 import type { UnifiedEvent } from '@fil/shared';
-import { addEventRow, listEvents as listEventsRepo, markEventRead as markEventReadRepo, countUnread as countUnreadRepo, markAllRead as markAllReadRepo, getEventForReply as getEventForReplyRepo, type EventFilters } from './repos/events.repo.js';
+import { addEventRow, listEvents as listEventsRepo, markEventRead as markEventReadRepo, countUnread as countUnreadRepo, countUnreadByConnector as countUnreadByConnectorRepo, markAllRead as markAllReadRepo, getEventForReply as getEventForReplyRepo, type EventFilters } from './repos/events.repo.js';
 import { db } from './client.js';
 
 const MAX = 500;
@@ -28,6 +28,10 @@ export function markEventRead(id: string, userId?: string): boolean {
 
 export function countUnread(userId?: string): number {
   return countUnreadRepo(userId);
+}
+
+export function countUnreadByConnector(userId?: string): Record<string, number> {
+  return countUnreadByConnectorRepo(userId);
 }
 
 export function markAllRead(userId?: string): number {

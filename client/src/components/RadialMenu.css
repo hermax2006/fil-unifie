@@ -1,0 +1,164 @@
+/* Variables reprises du thème de l'app si elles existent (--accent, --surface...), sinon valeurs par défaut. */
+.radial {
+  --r-accent: var(--accent, #0f6b5c);
+  --r-size: 56px;
+  --r-main: 64px;
+  --r-bottom: calc(76px + env(safe-area-inset-bottom, 0px)); /* au-dessus de la barre de nav basse */
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  pointer-events: none; /* seul ce qui est cliquable capte les touches */
+}
+@media (min-width: 901px) {
+  .radial { display: none; } /* sur PC : la barre latérale suffit */
+}
+
+.radial__scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 27, 36, 0.72);
+  pointer-events: auto;
+  animation: radial-fade 0.18s ease-out;
+}
+
+/* Point d'ancrage : centre du bouton principal */
+.radial__anchor {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--r-bottom) + var(--r-main) / 2);
+  width: 0;
+  height: 0;
+}
+
+.radial__main {
+  position: fixed;
+  left: 50%;
+  bottom: var(--r-bottom);
+  transform: translateX(-50%);
+  width: var(--r-main);
+  height: var(--r-main);
+  border: 0;
+  border-radius: 50%;
+  background: var(--r-accent);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  pointer-events: auto;
+  box-shadow: 0 6px 16px rgba(15, 107, 92, 0.35);
+  transition: background 0.15s, color 0.15s;
+}
+.radial[data-open] .radial__main {
+  background: #fff;
+  color: #0b5448;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+.radial__main:focus-visible,
+.radial__item:focus-visible { outline: 3px solid #fff; outline-offset: 3px; box-shadow: 0 0 0 6px var(--r-accent); }
+
+/* Un emplacement = bouton + badge + nom, qui glisse du centre vers sa place sur l'arc */
+.radial__slot {
+  position: absolute;
+  left: calc(var(--r-size) / -2);
+  top: calc(var(--r-size) / -2);
+  width: var(--r-size);
+  height: var(--r-size);
+  transform: translate(0, 0) scale(0.4);
+  opacity: 0;
+  visibility: hidden;
+  transition: transform 0.24s cubic-bezier(0.2, 0.9, 0.3, 1.2), opacity 0.18s, visibility 0s 0.24s;
+}
+.radial[data-open] .radial__slot {
+  transform: translate(var(--x), var(--y)) scale(1);
+  opacity: 1;
+  visibility: visible;
+  transition: transform 0.24s cubic-bezier(0.2, 0.9, 0.3, 1.2), opacity 0.18s, visibility 0s;
+}
+
+.radial__item {
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: #fff;
+  color: #0b5448;
+  font: 600 20px/1 inherit;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  pointer-events: auto;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+.radial__item--active { background: var(--r-accent); border-color: #fff; color: #fff; }
+.radial__item--add { background: transparent; border-style: dashed; color: #fff; box-shadow: none; }
+
+.radial__label {
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 6px);
+  transform: translateX(-50%);
+  width: 84px;
+  text-align: center;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.radial__badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 10px;
+  border: 2px solid #fff;
+  background: var(--r-accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.radial__badge--main {
+  position: fixed;
+  left: calc(50% + 14px);
+  right: auto;
+  top: auto;
+  bottom: calc(var(--r-bottom) + var(--r-main) - 12px);
+}
+
+.radial__arc path {
+  stroke: rgba(255, 255, 255, 0.35);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 6;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.radial[data-open] .radial__arc path { opacity: 1; }
+
+.radial__caption {
+  position: absolute;
+  left: 0;
+  width: 240px;
+  margin: 0;
+  transform: translateX(-50%);
+  text-align: center;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+@keyframes radial-fade { from { opacity: 0; } to { opacity: 1; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .radial__slot,
+  .radial[data-open] .radial__slot,
+  .radial__scrim,
+  .radial__arc path { transition: none; animation: none; }
+}

@@ -178,6 +178,15 @@ export function countUnread(userId?: string): number {
   return row.c;
 }
 
+/** Non-lus par connecteur : pour le menu radial (badges par app). */
+export function countUnreadByConnector(userId?: string): Record<string, number> {
+  const rows = (userId
+    ? db.prepare("SELECT connector_id as connector, COUNT(*) as c FROM events WHERE read_at IS NULL AND (user_id = ? OR user_id IS NULL) GROUP BY connector_id")
+      .all(userId)
+    : db.prepare("SELECT connector_id as connector, COUNT(*) as c FROM events WHERE read_at IS NULL GROUP BY connector_id").all()) as { connector: string; c: number }[];
+  return Object.fromEntries(rows.map((r) => [r.connector, r.c]));
+}
+
 export function markAllRead(userId?: string): number {
   const now = new Date().toISOString();
   const stmt = userId

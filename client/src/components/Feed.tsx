@@ -24,9 +24,15 @@ function loadFilters(): Filters {
 
 const PAGE_SIZE = 50;
 
-export function Feed() {
+export function Feed({ connector: connectorProp, onConnectorChange }: {
+  /** Filtre par connecteur contrôlé de l'extérieur (menu radial). */
+  connector?: string;
+  onConnectorChange?: (c: string) => void;
+} = {}) {
   const [events, setEvents] = useState<UnifiedEvent[]>([]);
-  const [connector, setConnector] = useState(() => loadFilters().connector);
+  const [internalConnector, setInternalConnector] = useState(() => loadFilters().connector);
+  // Contrôlé de l'extérieur (menu radial) si fourni, sinon l'état interne (persisté).
+  const connector = connectorProp !== undefined ? connectorProp : internalConnector;
   const [kind, setKind] = useState(() => loadFilters().kind);
   const [read, setRead] = useState<'all' | 'read' | 'unread'>(() => loadFilters().read);
   const [notifState, setNotifState] = useState<string>(() => permission());
@@ -44,6 +50,20 @@ export function Feed() {
   useEffect(() => {
     localStorage.setItem(FILTERS_KEY, JSON.stringify({ connector, kind, read }));
   }, [connector, kind, read]);
+
+  const setConnector = (c: string) => {
+    setInternalConnector(c);
+    onConnectorChange?.(c);
+  };
+
+  // Quand l'utilisateur change le filtre dans le select, on le reflète au menu radial.
+  useEffect(() => {
+    if (connectorProp !== undefined) {
+      // Le select interne ne fait que déléguer : on met à jour la source contrôlée.
+      if (internalConnector !== connectorProp) onConnectorChange?.(internalConnector);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [internalConnector]);
 
   // Raccourcis clavier : j/k naviguer, Entrée ouvrir, u marquer lu.
   // On ignore les touches pendant la saisie dans un champ.
