@@ -9,6 +9,7 @@ import { connectionsRouter } from './routes/connections.js';
 import { migrate } from './db/client.js';
 import { startPoller, stopPoller } from './queues/poller.js';
 import { startQueue, stopQueue } from './queues/index.js';
+import { startOutboundRetry, stopOutboundRetry } from './outbound/retry.js';
 import { mountQueueDashboard } from './queues/dashboard.js';
 import { webhookLimiter, apiLimiter } from './middleware/rate-limit.js';
 
@@ -52,11 +53,13 @@ app.listen(config.port, () => {
   if (process.env.NODE_ENV !== 'test') {
     void startQueue();
     startPoller();
+    startOutboundRetry();
   }
 });
 
 async function shutdown() {
   stopPoller();
+  stopOutboundRetry();
   await stopQueue();
   process.exit(0);
 }

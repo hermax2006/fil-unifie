@@ -121,6 +121,52 @@ apiRouter.post('/events/:id/reply', isProd ? requireAuth : attachUser, validateB
   }
 });
 
+// Téléchargement d'une pièce jointe à la demande : on ne garde pas le contenu
+// en base, on le re-récupère depuis la source (IMAP) avec les tokens chiffrés.
+apiRouter.get('/events/:id/attachments/:index', isProd ? requireAuth : attachUser, async (req: AuthRequest, res) => {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const idx = Number(req.params.index);
+  const event = getEventForReply(id, req.userId);
+  if (!event) return void res.status(404).json({ error: 'événement introuvable' });
+
+  const att = event.attachments?.[idx];
+  if (!att) return void res.status(404).json({ error: 'pièce jointe introuvable' });
+
+  if (!event.connectionId) return void res.status(400).json({ error: 'cette source ne permet pas le téléchargement' });
+  const connection = getConnection(event.connectionId, event.accountId);
+  if (!connection) return void res.status(404).json({ error: 'connexion source supprimée' });
+
+  const connector = registry.get(event.connector);
+  if (!connector?.downloadAttachment) return void res.status(501).json({ error: 'téléchargement non supporté pour ce connecteur' });
+
+  // Repli pour les anciens événements : Message-ID quand l'UID n'est pas connu.
+  const externalId = event.externalId;
+  const uidFromExternal = externalId?.startsWith('uid:') ? Number(externalId.slice(4)) : undefined;
+
+  try {
+    const { content, contentType } = await connector.downloadAttachment(
+      {
+        accountId: event.accountId,
+        config: connection.config_json ? JSON.parse(connection.config_json) : {},
+        tokens: connection.encrypted_tokens_json ? JSON.parse(decryptToken(connection.encrypted_tokens_json)) : null,
+      },
+      {
+        filename: att.filename,
+        mailbox: att.mailbox,
+        uid: att.uid ?? (Number.isFinite(uidFromExternal) ? uidFromExternal : undefined),
+        index: att.index,
+        messageId: !externalId?.startsWith('uid:') ? externalId : undefined,
+      },
+    );
+    // Nom de fichier ASCII sûr + version UTF-8 pour les accents.
+    const safeName = att.filename.replace(/[^\x20-\x7e]/g, '_').replace(/"/g, "'");
+    res.setHeader('Content-Disposition', `attachment; filename="${safeName}"; filename*=UTF-8''${encodeURIComponent(att.filename)}`);
+    return void res.type(contentType ?? 'application/octet-stream').send(content);
+  } catch (err: any) {
+    return void res.status(502).json({ error: err?.message || 'erreur lors du téléchargement' });
+  }
+});
+
 apiRouter.get('/events/:id/outbound', isProd ? requireAuth : attachUser, (req: AuthRequest, res) => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const event = getEventForReply(id, req.userId);

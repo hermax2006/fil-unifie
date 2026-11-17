@@ -180,4 +180,46 @@ export function migrate() {
     }
     setVersion(7);
   }
+
+  // v8: retry automatique des réponses + métadonnées PJ (dossier/UID IMAP).
+  if (current < 8) {
+    setVersion(8);
+  }
+
+  // v9: historique des livraisons webhook (débogage + visibilité côté UI).
+  if (current < 9) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS webhook_deliveries (
+        id TEXT PRIMARY KEY,
+        endpoint_id TEXT NOT NULL,
+        account_id TEXT NOT NULL,
+        connector_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        events_count INTEGER NOT NULL DEFAULT 0,
+        error TEXT,
+        source_ip TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (endpoint_id) REFERENCES webhook_endpoints(id) ON DELETE CASCADE
+      );
+    `);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_endpoint ON webhook_deliveries(endpoint_id, created_at DESC)');
+    setVersion(9);
+  }
+
+  // Colonnes optionnelles : ajout idempotent à chaque démarrage, pour couvrir
+  // les bases dont schema_version a dépassé 8 avant l'ajout de meta_json.
+  ensureColumns();
+}
+
+/** Ajoute une colonne si absente (SQLite : ALTER TABLE ... ADD COLUMN). */
+function ensureColumn(table: string, column: string, definition: string) {
+  const cols = db.pragma(`table_info(${table})`) as unknown as { name: string }[];
+  if (!cols.some((c) => c.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
+
+function ensureColumns() {
+  ensureColumn('outbound_messages', 'attempts', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn('event_attachments', 'meta_json', 'TEXT');
 }

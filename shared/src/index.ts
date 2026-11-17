@@ -7,6 +7,12 @@ export interface EventAttachment {
   filename: string;
   contentType?: string;
   size?: number;
+  /** IMAP : dossier d'origine, pour re-télécharger le fichier à la demande. */
+  mailbox?: string;
+  /** IMAP : UID du message dans ce dossier. */
+  uid?: number;
+  /** Position du fichier dans la liste des PJ du message d'origine. */
+  index?: number;
 }
 
 /** Format commun : chaque app est transformée en ceci avant d'entrer dans le fil. */

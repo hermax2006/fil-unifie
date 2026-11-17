@@ -141,10 +141,15 @@ function EventDetail({ event, onClose, onReplySent }: { event: UnifiedEvent; onC
           <div className="event-attachments">
             <span className="attachment-label">Pièces jointes :</span>
             {event.attachments.map((a, i) => (
-              <span className="attachment" key={`${a.filename}-${i}`}>
-                {a.filename}
+              <a
+                className="attachment"
+                key={`${a.filename}-${i}`}
+                href={`/api/events/${event.id}/attachments/${i}`}
+                download
+              >
+                📄 {a.filename}
                 {a.size ? ` (${Math.max(1, Math.round(a.size / 1024))} Ko)` : ''}
-              </span>
+              </a>
             ))}
           </div>
         )}
@@ -232,10 +237,15 @@ export function EventItem({ event, onMarkRead, selected, openSignal }: {
         <div className="event-attachments">
           <span className="attachment-label">Pièces jointes :</span>
           {event.attachments.map((a, i) => (
-            <span className="attachment" key={`${a.filename}-${i}`}>
-              {a.filename}
+            <a
+              className="attachment"
+              key={`${a.filename}-${i}`}
+              href={`/api/events/${event.id}/attachments/${i}`}
+              download
+            >
+              📄 {a.filename}
               {a.size ? ` (${Math.max(1, Math.round(a.size / 1024))} Ko)` : ''}
-            </span>
+            </a>
           ))}
         </div>
       )}

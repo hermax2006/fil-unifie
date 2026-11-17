@@ -5,6 +5,12 @@ import { enqueueEvent } from '../queues/index.js';
 import { resolveEndpoint } from './endpoint-resolver.js';
 import { decryptWebhookSecret } from './secret-manager.js';
 import { findAccountById } from '../db/repos/accounts.repo.js';
+import { recordDelivery } from '../db/repos/webhook-deliveries.repo.js';
+
+/** IP source pour l'historique des livraisons. */
+function sourceIp(req: { socket?: { remoteAddress?: string }; ip?: string }): string | undefined {
+  return req.ip ?? req.socket?.remoteAddress ?? undefined;
+}
 
 export const webhooksRouter = Router();
 
@@ -32,15 +38,40 @@ webhooksRouter.post('/w/:pathToken', async (req, res) => {
   }
 
   if (!wr.rawBody || !connector.verifyWebhook(wr, secret)) {
+    recordDelivery({
+      endpointId: endpoint.id,
+      accountId: endpoint.account_id,
+      connectorId: endpoint.connector_id,
+      status: 'rejected',
+      error: 'signature invalide',
+      sourceIp: sourceIp(req),
+    });
     return void res.status(401).json({ error: 'signature invalide' });
   }
 
   const handshake = connector.handshake(wr);
-  if (handshake !== undefined) return void res.json(handshake);
+  if (handshake !== undefined) {
+    recordDelivery({
+      endpointId: endpoint.id,
+      accountId: endpoint.account_id,
+      connectorId: endpoint.connector_id,
+      status: 'accepted',
+      sourceIp: sourceIp(req),
+    });
+    return void res.json(handshake);
+  }
 
   const events = connector.normalize(wr, endpoint.account_id);
   const userId = findAccountById(endpoint.account_id)?.user_id ?? null;
   await Promise.all(events.map((event) => enqueueEvent(event, userId)));
+  recordDelivery({
+    endpointId: endpoint.id,
+    accountId: endpoint.account_id,
+    connectorId: endpoint.connector_id,
+    status: 'accepted',
+    eventsCount: events.length,
+    sourceIp: sourceIp(req),
+  });
   res.status(200).json({ accepted: events.length });
 });
 

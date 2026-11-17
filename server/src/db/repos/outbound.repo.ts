@@ -45,6 +45,36 @@ export function markOutboundFailed(id: string, error: string): void {
   `).run(error.slice(0, 2000), id);
 }
 
+/** Incrémente le compteur de tentatives avant un nouvel essai. */
+export function bumpOutboundAttempts(id: string): void {
+  db.prepare('UPDATE outbound_messages SET attempts = attempts + 1 WHERE id = ?').run(id);
+}
+
+/** Échec définitif (ex. connexion supprimée) : on épuise le compteur pour ne plus retenter. */
+export function exhaustOutboundAttempts(id: string): void {
+  db.prepare('UPDATE outbound_messages SET attempts = 3 WHERE id = ?').run(id);
+}
+
+/**
+ * Réponses à retenter : « pending » (envoi interrompu) ou « failed »,
+ * pas encore au bout de 3 tentatives, recentes (24 h), et pas en cours
+ * d'envoi (on laisse 2 minutes aux envois fraîchement créés).
+ */
+export function listRetryableOutbound(limit = 20): (OutboundRow & { attempts: number })[] {
+  const now2min = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+  const now24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const rows = db.prepare(`
+    SELECT * FROM outbound_messages
+    WHERE status IN ('pending', 'failed')
+      AND attempts < 3
+      AND created_at >= ?
+      AND created_at <= ?
+    ORDER BY created_at ASC
+    LIMIT ?
+  `).all(now24h, now2min, limit) as any[];
+  return rows.map((r) => ({ ...mapRow(r), attempts: r.attempts ?? 0 }));
+}
+
 
 export interface OutboundRow {
   id: string;
@@ -56,6 +86,7 @@ export interface OutboundRow {
   body?: string;
   status: string;
   error?: string;
+  attempts?: number;
   providerMessageId?: string;
   createdAt: string;
   sentAt?: string;

@@ -10,6 +10,7 @@ import { registry } from '../connectors/registry.js';
 import { updateConnection, setConnectionTokens, getConnection, createConnection, deleteConnection } from '../db/repos/connections.repo.js';
 import { validateConnectorConfig } from '../connectors/schemas.js';
 import { getSyncState, getLatestSyncRun } from '../db/repos/sync.repo.js';
+import { listDeliveriesForEndpoint } from '../db/repos/webhook-deliveries.repo.js';
 import { encryptToken, decryptToken } from '../crypto/tokens.js';
 
 export const connectionsRouter = Router();
@@ -34,6 +35,17 @@ connectionsRouter.get('/webhook/endpoints', isProd ? requireAuth : attachUser, (
     createdAt: r.created_at,
   }));
   return res.json(rows);
+});
+
+connectionsRouter.get('/webhook/deliveries', isProd ? requireAuth : attachUser, (req: AuthRequest, res) => {
+  const accountId = resolveAccountId(req, (req.query.accountId as string) || undefined);
+  if (!accountId) return res.status(400).json({ error: 'accountId requis' });
+  const endpointId = req.query.endpointId as string;
+  if (!endpointId) return res.status(400).json({ error: 'endpointId requis' });
+  // L'endpoint doit appartenir au compte demandé : sinon 404 (pas d'information).
+  const owns = listEndpointsForAccount(accountId).some((r: any) => r.id === endpointId);
+  if (!owns) return res.status(404).json({ error: 'endpoint inconnu pour ce compte' });
+  return res.json(listDeliveriesForEndpoint(endpointId, 20));
 });
 
 const generateSchema = z.object({

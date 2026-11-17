@@ -23,8 +23,8 @@ export function addEventRow(e: UnifiedEvent & { userId?: string | null; dedupKey
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const attachmentStmt = db.prepare(`
-    INSERT INTO event_attachments (id, event_id, filename, content_type, size)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO event_attachments (id, event_id, filename, content_type, size, meta_json)
+    VALUES (?, ?, ?, ?, ?, ?)
   `);
   const insert = db.transaction(() => {
     stmt.run(
@@ -44,8 +44,12 @@ export function addEventRow(e: UnifiedEvent & { userId?: string | null; dedupKey
       e.receivedAt,
       e.readAt ?? null,
     );
-    for (const a of e.attachments ?? []) {
-      attachmentStmt.run(randomUUID(), e.id, a.filename, a.contentType ?? null, a.size ?? null);
+    for (const [i, a] of (e.attachments ?? []).entries()) {
+      // Métadonnées de re-téléchargement (IMAP : dossier + UID + position).
+      const meta = a.mailbox || a.uid !== undefined || a.index !== undefined
+        ? JSON.stringify({ mailbox: a.mailbox, uid: a.uid, index: a.index })
+        : null;
+      attachmentStmt.run(randomUUID(), e.id, a.filename, a.contentType ?? null, a.size ?? null, meta);
     }
   });
 
@@ -191,6 +195,8 @@ export interface EventForReply {
   externalId?: string;
   title?: string;
   author?: { id?: string; name: string };
+  /** Métadonnées des pièces jointes (pour le téléchargement à la demande). */
+  attachments?: { filename: string; contentType?: string; size?: number; mailbox?: string; uid?: number; index?: number }[];
   userId?: string;
 }
 
@@ -208,6 +214,10 @@ export function getEventForReply(id: string, userId?: string): EventForReply | u
         FROM events WHERE id = ?
       `).get(id)) as any;
   if (!row) return undefined;
+  // Les métadonnées des PJ sont dans la table event_attachments (pas dans events).
+  const attRows = db.prepare(
+    'SELECT filename, content_type, size, meta_json FROM event_attachments WHERE event_id = ? ORDER BY rowid'
+  ).all(id) as { filename: string; content_type: string | null; size: number | null; meta_json: string | null }[];
   return {
     id: row.id,
     accountId: row.accountId,
@@ -216,6 +226,15 @@ export function getEventForReply(id: string, userId?: string): EventForReply | u
     externalId: row.externalId ?? undefined,
     title: row.title ?? undefined,
     author: row.author_json ? JSON.parse(row.author_json) : undefined,
+    attachments: attRows.map((a) => {
+      const meta = a.meta_json ? JSON.parse(a.meta_json) as { mailbox?: string; uid?: number; index?: number } : {};
+      return {
+        filename: a.filename,
+        contentType: a.content_type ?? undefined,
+        size: a.size ?? undefined,
+        ...meta,
+      };
+    }),
     userId: row.userId ?? undefined,
   };
 }

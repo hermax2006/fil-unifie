@@ -13,12 +13,36 @@ export interface PollContext {
   tokens: Record<string, unknown> | null;
   /** Dernière interrogation réussie, pour ne récupérer que le nouveau contenu. */
   lastPolledAt?: string;
+  /**
+   * Curseurs par « ressource » (ex. dossier IMAP) : clé = nom de ressource,
+   * valeur = dernier curseur connu. Précède lastPolledAt quand présent.
+   */
+  resources?: Record<string, string | undefined>;
 }
 
 export interface PollResult {
   events: NewEvent[];
   /** Curseur libre (id du dernier message, ETag, date...) pour le prochain tour. */
   cursor?: string;
+  /** Curseurs par ressource (ex. un dossier IMAP) : plus fin que le curseur global. */
+  resourceCursors?: { resource: string; cursor: string }[];
+}
+
+/** Paramètres pour retrouver le contenu d'une pièce jointe à la demande. */
+export interface AttachmentRef {
+  filename: string;
+  /** IMAP : dossier et UID si les métadonnées les connaissent (nouveaux événements). */
+  mailbox?: string;
+  uid?: number;
+  /** Position du fichier dans la liste des PJ du message d'origine. */
+  index?: number;
+  /** Message-ID du message d'origine (repli pour les anciens événements). */
+  messageId?: string;
+}
+
+export interface DownloadAttachmentResult {
+  content: Buffer;
+  contentType?: string;
 }
 
 /** Contexte fourni pour répondre à un événement depuis le fil. */
@@ -66,6 +90,9 @@ export abstract class BaseConnector {
 
   /** Envoie une réponse à l'événement (email, Slack, Telegram...). */
   reply?(_ctx: ReplyContext): Promise<ReplyResult>;
+
+  /** Récupère le contenu d'une pièce jointe à la demande (IMAP...). */
+  downloadAttachment?(_ctx: PollContext, _params: AttachmentRef): Promise<DownloadAttachmentResult>;
 
   // À ajouter plus tard : connect().
 }

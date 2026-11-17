@@ -31,6 +31,7 @@ export function Connections({ user }: { user?: User }) {
   const [testResult, setTestResult] = useState<string | null>(null);
   const [endpoints, setEndpoints] = useState<Endpoint[]>([]);
   const [connections, setConnections] = useState<ConnectorConnection[]>([]);
+  const [deliveries, setDeliveries] = useState<Record<string, any[] | 'loading' | null>>({});
   const [connConnectorId, setConnConnectorId] = useState('rss');
   const [connConfigUrl, setConnConfigUrl] = useState('');
   const [connHost, setConnHost] = useState('');
@@ -46,6 +47,17 @@ export function Connections({ user }: { user?: User }) {
   const [connError, setConnError] = useState<string | null>(null);
   const [connTestingId, setConnTestingId] = useState<string | null>(null);
   const [connTestResults, setConnTestResults] = useState<Record<string, string>>({});
+
+  async function loadDeliveries(endpointId: string) {
+    setDeliveries((prev) => ({ ...prev, [endpointId]: 'loading' }));
+    try {
+      const res = await fetch(`/api/connections/webhook/deliveries?endpointId=${endpointId}&accountId=${accountId}`, { credentials: 'include' });
+      const data = await readJson(res);
+      setDeliveries((prev) => ({ ...prev, [endpointId]: res.ok ? data : [{ error: data.error || `Erreur ${res.status}` }] }));
+    } catch {
+      setDeliveries((prev) => ({ ...prev, [endpointId]: [{ error: 'Erreur réseau' }] }));
+    }
+  }
 
   async function loadEndpoints() {
     try {
@@ -366,6 +378,27 @@ export function Connections({ user }: { user?: User }) {
                   <button className="btn small danger" onClick={() => revoke(ep.id)}>Révoquer</button>
                 </div>
               )}
+              <details className="deliveries" onToggle={(e) => {
+                const el = e.currentTarget as HTMLDetailsElement;
+                if (el.open && !deliveries[ep.id]) void loadDeliveries(ep.id);
+              }}>
+                <summary>Historique des réceptions</summary>
+                {deliveries[ep.id] === 'loading' && <p className="hint">Chargement…</p>}
+                {Array.isArray(deliveries[ep.id]) && (deliveries[ep.id] as any[]).length === 0 && (
+                  <p className="hint">Aucune réception enregistrée.</p>
+                )}
+                {Array.isArray(deliveries[ep.id]) && (deliveries[ep.id] as any[]).map((d, i) => (
+                  <div key={i} className="outbound-item">
+                    <div className="outbound-head">
+                      <span className={d.status === 'accepted' ? 'outbound-status sent' : 'outbound-status failed'}>
+                        {d.status === 'accepted' ? `✅ accepté (${d.eventsCount ?? 0} événement${(d.eventsCount ?? 0) > 1 ? 's' : ''})` : '❌ rejeté'}
+                      </span>
+                      <span className="outbound-date">{new Date(d.createdAt).toLocaleString()}</span>
+                    </div>
+                    {d.error && <div className="error small">{d.error}</div>}
+                  </div>
+                ))}
+              </details>
             </li>
           ))}
         </ul>

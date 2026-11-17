@@ -2,7 +2,7 @@ import type { EventAttachment, NewEvent } from '@fil/shared';
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import nodemailer from 'nodemailer';
-import { BaseConnector, type PollContext, type PollResult, type WebhookRequest, type ReplyContext, type ReplyResult } from './base.connector.js';
+import { BaseConnector, type PollContext, type PollResult, type WebhookRequest, type ReplyContext, type ReplyResult, type AttachmentRef, type DownloadAttachmentResult } from './base.connector.js';
 
 function asString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
@@ -162,25 +162,91 @@ export class ImapConnector extends BaseConnector {
     return { messageId: info.messageId };
   }
 
+  /**
+   * Télécharge le contenu d'une pièce jointe à la demande.
+   * Stratégie :
+   *  - dossier + UID connus (nouveaux événements) -> fetch direct,
+   *  - sinon recherche du message par Message-ID dans les dossiers configurés
+   *    (anciens événements, qui n'avaient pas ces métadonnées).
+   */
+  async downloadAttachment(ctx: PollContext, params: AttachmentRef): Promise<DownloadAttachmentResult> {
+    const info = connectionFrom(ctx);
+    const mailboxes = params.mailbox ? [params.mailbox] : mailboxesFrom(ctx.config);
+    const client = makeClient(info);
+    try {
+      await client.connect();
+      for (const mailbox of mailboxes) {
+        let lock;
+        try {
+          lock = await client.getMailboxLock(mailbox);
+        } catch {
+          continue; // dossier inaccessible : on essaie le suivant
+        }
+        try {
+          // Cible du message : par UID direct, sinon par recherche Message-ID.
+          let uids: number[] = [];
+          if (params.uid) {
+            uids = [params.uid];
+          } else if (params.messageId) {
+            const found = (await client.search({ header: { 'message-id': params.messageId } }, { uid: true })) || [];
+            uids = found.map(Number).filter((n) => Number.isFinite(n) && n > 0);
+          }
+          for (const uid of uids) {
+            for await (const message of client.fetch({ uid }, { source: true }, { uid: true })) {
+              if (!message.source) continue;
+              let parsed;
+              try {
+                parsed = await simpleParser(message.source);
+              } catch {
+                continue;
+              }
+              const list = parsed.attachments ?? [];
+              const att =
+                (params.index !== undefined ? list[params.index] : undefined) ??
+                list.find((a) => a.filename === params.filename);
+              if (att?.content) {
+                return { content: att.content as Buffer, contentType: att.contentType };
+              }
+            }
+          }
+        } finally {
+          lock.release();
+        }
+      }
+      throw new Error('IMAP: pièce jointe introuvable (ou déplacée)');
+    } catch (err) {
+      throw imapError(err);
+    } finally {
+      try {
+        await client.logout();
+      } catch {
+        // Connexion déjà fermée.
+      }
+    }
+  }
+
   async poll(ctx: PollContext): Promise<PollResult> {
     const info = connectionFrom(ctx);
     const mailboxes = mailboxesFrom(ctx.config);
     const now = new Date().toISOString();
 
-    // IMAP ne filtre qu'à la journée : on prend une marge d'un jour.
-    // Les doublons sont rejetés ensuite par dedup_key.
-    const since = ctx.lastPolledAt
-      ? new Date(new Date(ctx.lastPolledAt).getTime() - 24 * 60 * 60 * 1000)
-      : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-
     const client = makeClient(info);
 
     const events: NewEvent[] = [];
+    const resourceCursors: { resource: string; cursor: string }[] = [];
+
     try {
       await client.connect();
 
       for (const mailbox of mailboxes) {
         if (events.length >= 20) break;
+
+        // Curseur PAR dossier : on ne rattrape que le nouveau contenu de CE dossier.
+        // (Fenêtre de 24 h de marge : les doublons sont éliminés par dedup_key.)
+        const mailboxCursor = ctx.resources?.[`mailbox:${mailbox}`] ?? ctx.lastPolledAt;
+        const since = mailboxCursor
+          ? new Date(new Date(mailboxCursor).getTime() - 24 * 60 * 60 * 1000)
+          : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
         let lock;
         try {
@@ -189,6 +255,8 @@ export class ImapConnector extends BaseConnector {
           console.error(`IMAP: dossier "${mailbox}" inaccessible`, err);
           continue;
         }
+
+        let latestInternalDate: string | undefined;
 
         try {
           for await (const message of client.fetch(
@@ -211,10 +279,14 @@ export class ImapConnector extends BaseConnector {
                 body = asString(parsed.text) ?? asString(htmlText) ?? subject;
                 const list = (parsed.attachments ?? [])
                   .slice(0, 20)
-                  .map((a) => ({
+                  .map((a, i) => ({
                     filename: a.filename || 'pièce jointe',
                     contentType: a.contentType || undefined,
                     size: a.size || undefined,
+                    // Où retrouver le contenu si l'utilisateur veut le télécharger.
+                    mailbox,
+                    uid: message.uid,
+                    index: i,
                   }));
                 if (list.length > 0) attachments = list;
               } catch {
@@ -226,6 +298,9 @@ export class ImapConnector extends BaseConnector {
               toIso(message.internalDate) ??
               toIso(envelope?.date) ??
               now;
+
+            // Le curseur du dossier avance jusqu'au message le plus récent vu.
+            if (!latestInternalDate || occurredAt > latestInternalDate) latestInternalDate = occurredAt;
 
             events.push({
               connector: this.info.id,
@@ -242,6 +317,10 @@ export class ImapConnector extends BaseConnector {
         } finally {
           lock.release();
         }
+
+        if (latestInternalDate) {
+          resourceCursors.push({ resource: `mailbox:${mailbox}`, cursor: latestInternalDate });
+        }
       }
     } finally {
       try {
@@ -251,6 +330,6 @@ export class ImapConnector extends BaseConnector {
       }
     }
 
-    return { events, cursor: now };
+    return { events, cursor: now, resourceCursors };
   }
 }

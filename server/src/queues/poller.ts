@@ -1,6 +1,6 @@
 import { registry } from '../connectors/registry.js';
 import { listActiveConnectionsForPolling, type PollingConnectionRow } from '../db/repos/connections.repo.js';
-import { getSyncState, saveSyncState, startSyncRun, finishSyncRun, purgeSyncRuns } from '../db/repos/sync.repo.js';
+import { getSyncState, saveSyncState, listSyncStates, startSyncRun, finishSyncRun, purgeSyncRuns } from '../db/repos/sync.repo.js';
 import { decryptToken } from '../crypto/tokens.js';
 import { config } from '../config/index.js';
 import { enqueueEvent } from './index.js';
@@ -48,12 +48,19 @@ export async function pollConnection(row: PollingConnectionRow): Promise<number>
   const startedAt = new Date().toISOString();
   const sync = getSyncState(row.id);
 
+  // Curseurs par ressource (ex. dossiers IMAP) : on donne tout ce qu'on connaît.
+  const resources: Record<string, string | undefined> = {};
+  for (const st of listSyncStates(row.id)) {
+    resources[st.resource] = st.cursor ?? undefined;
+  }
+
   try {
     const result = await connector.poll({
       accountId: row.account_id,
       config: cfg,
       tokens,
       lastPolledAt: sync?.last_polled_at ?? undefined,
+      resources,
     });
 
     for (const event of result.events) {
@@ -61,7 +68,15 @@ export async function pollConnection(row: PollingConnectionRow): Promise<number>
     }
 
     const finishedAt = new Date().toISOString();
-    saveSyncState(row.id, result.cursor ?? null, finishedAt);
+    if (result.resourceCursors?.length) {
+      // Un état par ressource + l'état global (date) pour l'affichage « dernière sync ».
+      for (const rc of result.resourceCursors) {
+        saveSyncState(row.id, rc.cursor, finishedAt, rc.resource);
+      }
+      saveSyncState(row.id, null, finishedAt);
+    } else {
+      saveSyncState(row.id, result.cursor ?? null, finishedAt);
+    }
 
     // On n'historise que les runs utiles (évite une ligne toutes les 60 s).
     if (result.events.length > 0) {

@@ -25,6 +25,11 @@ export function getSyncState(connectionId: string, resource = 'default'): SyncSt
   ).get(connectionId, resource) as SyncStateRow | undefined;
 }
 
+/** Tous les états d'une connexion (un par ressource : dossiers IMAP...). */
+export function listSyncStates(connectionId: string): SyncStateRow[] {
+  return db.prepare('SELECT * FROM sync_state WHERE connection_id = ?').all(connectionId) as SyncStateRow[];
+}
+
 /** Enregistre le curseur et la date du dernier polling réussi. */
 export function saveSyncState(
   connectionId: string,

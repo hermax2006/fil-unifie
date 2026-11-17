@@ -53,6 +53,11 @@ Objectif : que l'application ressemble à un **produit**, pas à un prototype d'
 
 ## Phase 2 — Fiabilité (après interface)
 
+> **Statut : terminée.** Téléchargement des PJ à la demande (`GET /api/events/:id/attachments/:index`,
+> fetch IMAP par UID/Message-ID), retry automatique des réponses (3 essais max, worker 3 min),
+> curseur par dossier IMAP (`sync_state` par ressource), historique des livraisons webhook
+> (`webhook_deliveries` v9 + UI « Historique des réceptions »).
+
 | Tâche | Détails |
 |---|---|
 | **2.1 Téléchargement PJ** | Route `GET /api/events/:id/attachments/:attId` : fetch IMAP à la demande + streaming authentifié. |

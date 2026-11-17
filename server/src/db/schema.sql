@@ -87,6 +87,7 @@ CREATE TABLE IF NOT EXISTS event_attachments (
   content_type TEXT,
   size INTEGER,
   FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
+)  meta_json TEXT,
 );
 
 CREATE INDEX IF NOT EXISTS idx_event_attachments_event ON event_attachments(event_id);
@@ -146,3 +147,18 @@ CREATE TABLE IF NOT EXISTS outbound_messages (
 
 CREATE INDEX IF NOT EXISTS idx_outbound_event ON outbound_messages(event_id);
 CREATE INDEX IF NOT EXISTS idx_outbound_account ON outbound_messages(account_id);
+
+-- Historique des livraisons webhook (acceptées et rejetées), pour l'UI Connexions.
+CREATE TABLE IF NOT EXISTS webhook_deliveries (
+  id TEXT PRIMARY KEY,
+  endpoint_id TEXT NOT NULL,
+  account_id TEXT NOT NULL,
+  connector_id TEXT NOT NULL,
+  status TEXT NOT NULL,              -- 'accepted' | 'rejected'
+  events_count INTEGER NOT NULL DEFAULT 0,
+  error TEXT,
+  source_ip TEXT,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (endpoint_id) REFERENCES webhook_endpoints(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_endpoint ON webhook_deliveries(endpoint_id, created_at DESC);
