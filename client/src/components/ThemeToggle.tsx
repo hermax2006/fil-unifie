@@ -2,12 +2,12 @@ import { useEffect, useState } from 'react';
 import { permission, request } from '../notifications.js';
 
 /**
- * Thème sombre par défaut, clair optionnel.
+ * Thème clair par défaut (maquette), sombre optionnel.
  * On pose data-theme sur <html> pour que toutes les variables CSS suivent,
  * et on persiste le choix dans localStorage.
  */
 function initialTheme(): 'dark' | 'light' {
-  return localStorage.getItem('theme') === 'light' ? 'light' : 'dark';
+  return localStorage.getItem('theme') === 'dark' ? 'dark' : 'light';
 }
 
 export function ThemeToggle() {

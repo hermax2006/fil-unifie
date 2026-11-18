@@ -187,6 +187,14 @@ export function countUnreadByConnector(userId?: string): Record<string, number> 
   return Object.fromEntries(rows.map((r) => [r.connector, r.c]));
 }
 
+/** Nombre total d'événements (vues « Tout » et compteurs de la sidebar). */
+export function countEvents(userId?: string): number {
+  const row = userId
+    ? db.prepare('SELECT COUNT(*) as c FROM events WHERE user_id = ? OR user_id IS NULL').get(userId)
+    : db.prepare('SELECT COUNT(*) as c FROM events').get();
+  return (row as { c: number }).c;
+}
+
 export function markAllRead(userId?: string): number {
   const now = new Date().toISOString();
   const stmt = userId

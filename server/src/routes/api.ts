@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { registry } from '../connectors/registry.js';
-import { listEvents, markEventRead, countUnread, countUnreadByConnector, markAllRead, getEventForReply } from '../db/events.store.js';
+import { listEvents, markEventRead, countUnread, countUnreadByConnector, countEvents, markAllRead, getEventForReply } from '../db/events.store.js';
 import { sseHandler } from '../sse/index.js';
 import { requireAuth, attachUser, type AuthRequest } from '../auth/middleware.js';
 import { validateBody, validateQuery } from '../utils/validate.js';
@@ -41,9 +41,13 @@ apiRouter.get('/events', isProd ? requireAuth : attachUser, validateQuery(events
 apiRouter.get('/events/unread-count', isProd ? requireAuth : attachUser, (req: AuthRequest, res) => {
   // group=connector : répartition par app (menu radial), sinon le total simple.
   if (req.query.group === 'connector') {
-    return void res.json({ count: countUnread(req.userId), byConnector: countUnreadByConnector(req.userId) });
+    return void res.json({
+      count: countUnread(req.userId),
+      total: countEvents(req.userId),
+      byConnector: countUnreadByConnector(req.userId),
+    });
   }
-  void res.json({ count: countUnread(req.userId) });
+  void res.json({ count: countUnread(req.userId), total: countEvents(req.userId) });
 });
 
 apiRouter.post('/events/read-all', isProd ? requireAuth : attachUser, (req: AuthRequest, res) => {

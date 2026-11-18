@@ -34,7 +34,9 @@ flowchart TD
 > **Statut : terminée** (sauf 1.4 groupement par thread, reporté en Phase 2).
 > Fait : design system sombre/clair (accent indigo/violet), layout sidebar responsive,
 > EventItem + vue détail modale + historique des réponses, onboarding wizard,
-> notifications navigateur, filtres enregistrés, raccourcis clavier (j/k/Entrée/u), PWA installable.
+> notifications navigateur, filtres enregistrés, raccourcis clavier (j/k/Entrée/u), PWA installable,
+> menu radial mobile (maquette utilisateur intégrée : filtre du Fil par app + badges non-lus
+> par connecteur via `unread-count?group=connector`).
 
 Objectif : que l'application ressemble à un **produit**, pas à un prototype d'admin.
 
@@ -82,10 +84,18 @@ Objectif : que l'application ressemble à un **produit**, pas à un prototype d'
 
 ## Phase 4 — Production
 
+> **Statut : 4.2 terminée (Docker validé de bout en bout).** `server/Dockerfile` (Node 22, build TS,
+> `schema.sql` copié dans dist), `client/Dockerfile` (Vite → nginx statique), `client/nginx.conf`
+> (SPA + proxy `/api`/`/auth`/`/webhooks` vers le serveur, `proxy_buffering off` pour le SSE,
+> une seule origine → plus de CORS), `docker-compose.yml` (server + redis BullMQ + web),
+> `.env.production.example`. Registre testé en local : base neuve dans le volume, register, API
+> authentifiée, SSE proxy OK. Fix `schema.sql` (`meta_json` mal placé → cassait toute base neuve).
+> Reste : 4.1 Postgres, 4.3 hébergement, 4.4 sécurité prod, 4.5 monitoring.
+
 | Tâche | Détails |
 |---|---|
 | **4.1 PostgreSQL** | Remplacer better-sqlite3 par `pg` : les repos sont déjà isolés, adapter le SQL (types, `RETURNING`). Migrations idempotentes. |
-| **4.2 Docker** | `Dockerfile` server + client, `docker-compose.yml` (server, client, redis, postgres), `.env.production.example`. |
+| **4.2 Docker** | ✅ Terminé. Dockerfiles server (Node 22) + client (Vite → nginx, proxy API/SSE), compose server+redis+web, volume SQLite, `.env.production.example`. Postgres remplacera le volume plus tard (4.1). |
 | **4.3 Hébergement** | VPS + HTTPS (Caddy ou nginx + certbot), domaine, systemd ou compose en `restart: always`. |
 | **4.4 Sécurité prod** | Reset password (email), `audit_log` (connexions, rotations), rotation sessions, sauvegardes DB (cron `sqlite3 .backup` ou `pg_dump`). |
 | **4.5 Monitoring** | Sentry (client + server) ou logs agrégés, uptime monitor. |
@@ -119,8 +129,8 @@ gantt
     OAuth Gmail                     :p3a, after p2b, 4d
     Outlook + Telegram/Slack reply  :p3b, after p3a, 4d
     section Phase 4
-    Postgres + Docker               :p4a, after p3b, 4d
-    VPS + HTTPS + monitoring        :p4b, after p4a, 3d
+    Docker + VPS + HTTPS            :p4a, after p2b, 4d
+    Postgres + monitoring           :p4b, after p4a, 3d
 ```
 
 > Les durées sont indicatives. On avance phase par phase, avec commit + push à chaque étape validée (l'utilisateur demande avant chaque push).

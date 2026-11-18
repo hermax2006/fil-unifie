@@ -1,111 +1,72 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { UnifiedEvent } from '@fil/shared';
 import { readJson } from '../api.js';
-import { EventItem } from './EventItem.js';
+import { EventCard, EventPanel } from './EventItem.js';
 import { notify, permission, request } from '../notifications.js';
-import { NotificationsToggle } from './ThemeToggle.js';
 
-/** Filtres persistés : l'utilisateur retrouve son filtel au retour. */
-type Filters = { connector: string; kind: string; read: 'all' | 'read' | 'unread' };
-const FILTERS_KEY = 'feed-filters';
+/** Vues du fil : Tous / Non lus / À répondre (maquette). */
+export type FeedView = 'all' | 'unread' | 'reply';
 
-function loadFilters(): Filters {
+/** Compteurs remontés à la sidebar (Tout, Non lus, À répondre, badges par app). */
+export type FeedCounts = { total: number; unread: number; byConnector: Record<string, number> };
+
+const PAGE_SIZE = 50;
+const ARCHIVED_KEY = 'archived-ids';
+
+function loadArchived(): Set<string> {
   try {
-    const raw = JSON.parse(localStorage.getItem(FILTERS_KEY) ?? '{}');
-    return {
-      connector: typeof raw.connector === 'string' ? raw.connector : '',
-      kind: typeof raw.kind === 'string' ? raw.kind : '',
-      read: raw.read === 'read' || raw.read === 'unread' ? raw.read : 'all',
-    };
+    const raw = JSON.parse(localStorage.getItem(ARCHIVED_KEY) ?? '[]');
+    return Array.isArray(raw) ? new Set(raw.filter((x) => typeof x === 'string')) : new Set();
   } catch {
-    return { connector: '', kind: '', read: 'all' };
+    return new Set();
   }
 }
 
-const PAGE_SIZE = 50;
+/** Groupe de date affiché au-dessus des cartes : AUJOURD'HUI / HIER / date. */
+function dayGroup(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) return "Aujourd'hui";
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (d.toDateString() === yesterday.toDateString()) return 'Hier';
+  return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
+}
 
-export function Feed({ connector: connectorProp, onConnectorChange }: {
-  /** Filtre par connecteur contrôlé de l'extérieur (menu radial). */
-  connector?: string;
-  onConnectorChange?: (c: string) => void;
-} = {}) {
+export function Feed({ view, onViewChange, appFilter, onAppChange, selectedId, onSelect, onCounts, headerExtra }: {
+  view: FeedView;
+  onViewChange: (v: FeedView) => void;
+  /** Filtre par app contrôlé de l'extérieur (sidebar / menu radial). '' = toutes. */
+  appFilter: string;
+  onAppChange: (c: string) => void;
+  selectedId: string | null;
+  onSelect: (id: string | null) => void;
+  /** Compteurs pour la sidebar (Tout / Non lus / À répondre / badges). */
+  onCounts: (c: FeedCounts) => void;
+  /** Éléments du topbar ajoutés par App (menu avatar mobile). */
+  headerExtra?: ReactNode;
+}) {
   const [events, setEvents] = useState<UnifiedEvent[]>([]);
-  const [internalConnector, setInternalConnector] = useState(() => loadFilters().connector);
-  // Contrôlé de l'extérieur (menu radial) si fourni, sinon l'état interne (persisté).
-  const connector = connectorProp !== undefined ? connectorProp : internalConnector;
-  const [kind, setKind] = useState(() => loadFilters().kind);
-  const [read, setRead] = useState<'all' | 'read' | 'unread'>(() => loadFilters().read);
+  const [archived, setArchived] = useState<Set<string>>(() => loadArchived());
   const [notifState, setNotifState] = useState<string>(() => permission());
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [detailSignal, setDetailSignal] = useState(0);
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [unread, setUnread] = useState(0);
+  const [total, setTotal] = useState(0);
+  const [byConnector, setByConnector] = useState<Record<string, number>>({});
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Mémorise les filtres d'un chargement à l'autre.
-  useEffect(() => {
-    localStorage.setItem(FILTERS_KEY, JSON.stringify({ connector, kind, read }));
-  }, [connector, kind, read]);
-
-  const setConnector = (c: string) => {
-    setInternalConnector(c);
-    onConnectorChange?.(c);
-  };
-
-  // Quand l'utilisateur change le filtre dans le select, on le reflète au menu radial.
-  useEffect(() => {
-    if (connectorProp !== undefined) {
-      // Le select interne ne fait que déléguer : on met à jour la source contrôlée.
-      if (internalConnector !== connectorProp) onConnectorChange?.(internalConnector);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [internalConnector]);
-
-  // Raccourcis clavier : j/k naviguer, Entrée ouvrir, u marquer lu.
-  // On ignore les touches pendant la saisie dans un champ.
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      const t = e.target as HTMLElement | null;
-      if (t && ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName)) return;
-      if (events.length === 0) return;
-      const idx = selectedId ? events.findIndex((ev) => ev.id === selectedId) : -1;
-      if (e.key === 'j') {
-        const next = events[Math.min(idx + 1, events.length - 1)];
-        if (next) setSelectedId(next.id);
-      } else if (e.key === 'k') {
-        const prev = events[Math.max(idx - 1, 0)];
-        if (prev) setSelectedId(prev.id);
-      } else if (e.key === 'Enter' && selectedId) {
-        setDetailSignal((c) => c + 1);
-      } else if (e.key === 'u' && selectedId) {
-        void markRead(selectedId);
-      }
-    }
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [events, selectedId]);
-
-  const buildQs = useCallback((before?: string) => {
-    const qs = new URLSearchParams();
-    if (connector) qs.set('connector', connector);
-    if (kind) qs.set('kind', kind);
-    if (read !== 'all') qs.set('read', read);
-    if (search) qs.set('q', search);
-    if (before) qs.set('before', before);
-    qs.set('limit', String(PAGE_SIZE));
-    return qs;
-  }, [connector, kind, read, search]);
+  // « À répondre » : pour l'instant, seuls les mails (imap) peuvent être répondus.
+  const replyable = (e: UnifiedEvent) => e.connector === 'imap';
 
   const matches = useCallback((e: UnifiedEvent) => {
-    if (connector && e.connector !== connector) return false;
-    if (kind && e.kind !== kind) return false;
-    if (read === 'read' && !e.readAt) return false;
-    if (read === 'unread' && e.readAt) return false;
+    if (appFilter && e.connector !== appFilter) return false;
+    if (view === 'unread' && e.readAt) return false;
+    if (view === 'reply' && (e.readAt || !replyable(e))) return false;
+    if (archived.has(e.id)) return false;
     if (search) {
       const hay = [e.title, e.body, e.author?.name, e.connector]
         .filter(Boolean)
@@ -114,7 +75,18 @@ export function Feed({ connector: connectorProp, onConnectorChange }: {
       if (!hay.includes(search.toLowerCase())) return false;
     }
     return true;
-  }, [connector, kind, read, search]);
+  }, [appFilter, view, search, archived]);
+
+  const buildQs = useCallback((before?: string) => {
+    const qs = new URLSearchParams();
+    if (appFilter) qs.set('connector', appFilter);
+    // « À répondre » : on prend les non-lus, le filtre client affine.
+    if (view !== 'all') qs.set('read', 'unread');
+    if (search) qs.set('q', search);
+    if (before) qs.set('before', before);
+    qs.set('limit', String(PAGE_SIZE));
+    return qs;
+  }, [appFilter, view, search]);
 
   const load = useCallback(async (reset = true) => {
     if (reset) setLoading(true);
@@ -137,14 +109,20 @@ export function Feed({ connector: connectorProp, onConnectorChange }: {
       setLoading(false);
       setLoadingMore(false);
     }
-    // events n'est utilisé que pour le curseur "before" du chargement suivant.
+    // events n'est utilisé que pour le curseur « before » du chargement suivant.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [buildQs, events]);
 
-  async function loadUnread() {
+  async function loadCounts() {
     try {
-      const res = await fetch('/api/events/unread-count', { credentials: 'include' });
-      if (res.ok) setUnread(((await readJson<{ count?: number }>(res)).count) ?? 0);
+      const res = await fetch('/api/events/unread-count?group=connector', { credentials: 'include' });
+      if (!res.ok) return;
+      const data = await readJson<{ count?: number; total?: number; byConnector?: Record<string, number> }>(res);
+      const counts = { total: data.total ?? 0, unread: data.count ?? 0, byConnector: data.byConnector ?? {} };
+      setUnread(counts.unread);
+      setTotal(counts.total);
+      setByConnector(counts.byConnector);
+      onCounts(counts);
     } catch {
       // Le compteur n'est pas bloquant.
     }
@@ -153,10 +131,11 @@ export function Feed({ connector: connectorProp, onConnectorChange }: {
   useEffect(() => {
     void load(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connector, kind, read, search]);
+  }, [appFilter, view, search]);
 
   useEffect(() => {
-    void loadUnread();
+    void loadCounts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -185,106 +164,165 @@ export function Feed({ connector: connectorProp, onConnectorChange }: {
     return () => es.close();
   }, [matches]);
 
-  const connectors = useMemo(() => {
-    const list = Array.from(new Set(events.map((e) => e.connector)));
-    if (connector && !list.includes(connector)) list.push(connector);
-    return list.sort();
-  }, [events, connector]);
+  // Raccourcis clavier : j/k naviguer, Entrée ouvrir, u marquer lu.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const t = e.target as HTMLElement | null;
+      if (t && ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName)) return;
+      if (visible.length === 0) return;
+      const idx = selectedId ? visible.findIndex((ev) => ev.id === selectedId) : -1;
+      if (e.key === 'j') {
+        const next = visible[Math.min(idx + 1, visible.length - 1)];
+        if (next) onSelect(next.id);
+      } else if (e.key === 'k') {
+        const prev = visible[Math.max(idx - 1, 0)];
+        if (prev) onSelect(prev.id);
+      } else if (e.key === 'u' && selectedId) {
+        void markRead(selectedId);
+      } else if (e.key === 'Escape' && selectedId) {
+        onSelect(null);
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [events, archived, selectedId, view, appFilter, search]);
+
+  const visible = useMemo(() => events.filter(matches), [events, matches]);
+
+  // Cartes groupées par jour (AUJOURD'HUI / HIER / …)
+  const groups = useMemo(() => {
+    const map = new Map<string, UnifiedEvent[]>();
+    for (const e of visible) {
+      const g = dayGroup(e.receivedAt);
+      if (!map.has(g)) map.set(g, []);
+      map.get(g)!.push(e);
+    }
+    return Array.from(map.entries());
+  }, [visible]);
+
+  const selected = useMemo(
+    () => (selectedId ? visible.find((e) => e.id === selectedId) ?? events.find((e) => e.id === selectedId) : undefined),
+    [selectedId, visible, events],
+  );
 
   async function markRead(id: string) {
     const res = await fetch(`/api/events/${id}/read`, { method: 'POST', credentials: 'include' });
     if (!res.ok) return;
     setUnread((c) => Math.max(0, c - 1));
-    if (read === 'unread') {
-      setEvents((prev) => prev.filter((e) => e.id !== id));
-    } else {
-      setEvents((prev) => prev.map((e) => (e.id === id ? { ...e, readAt: e.readAt || new Date().toISOString() } : e)));
-    }
+    setEvents((prev) => prev.map((e) => (e.id === id ? { ...e, readAt: e.readAt || new Date().toISOString() } : e)));
+    void loadCounts();
+  }
+
+  /** Archiver = marquer lu + retiré du fil (côté client, une vraie archive serveur viendra plus tard). */
+  async function archive(id: string) {
+    await markRead(id);
+    setArchived((prev) => {
+      const next = new Set(prev).add(id);
+      localStorage.setItem(ARCHIVED_KEY, JSON.stringify([...next]));
+      return next;
+    });
+    setEvents((prev) => prev.filter((e) => e.id !== id));
+    onSelect(null);
   }
 
   async function markAllRead() {
     const res = await fetch('/api/events/read-all', { method: 'POST', credentials: 'include' });
     if (!res.ok) return;
     setUnread(0);
-    if (read === 'unread') {
-      setEvents([]);
-      setHasMore(false);
-    } else {
-      const now = new Date().toISOString();
-      setEvents((prev) => prev.map((e) => ({ ...e, readAt: e.readAt || now })));
-    }
+    const now = new Date().toISOString();
+    setEvents((prev) => prev.map((e) => ({ ...e, readAt: e.readAt || now })));
+    void loadCounts();
   }
 
   return (
-    <div className="feed-wrap">
-      <div className="filters">
-        <input
-          type="search"
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          placeholder="Rechercher (titre, contenu, auteur)…"
-          aria-label="Rechercher dans le fil"
-        />
-        <select value={connector} onChange={(e) => setConnector(e.target.value)}>
-          <option value="">Tous connecteurs</option>
-          {connectors.map((c) => (
-            <option key={c} value={c}>{c}</option>
-          ))}
-        </select>
-        <select value={kind} onChange={(e) => setKind(e.target.value)}>
-          <option value="">Tous types</option>
-          <option value="message">message</option>
-          <option value="mention">mention</option>
-          <option value="notification">notification</option>
-          <option value="task">task</option>
-          <option value="other">other</option>
-        </select>
-        <select value={read} onChange={(e) => setRead(e.target.value as any)}>
-          <option value="all">Tous</option>
-          <option value="unread">Non lus</option>
-          <option value="read">Lus</option>
-        </select>
-        <button className="btn small" onClick={() => void load(true)} disabled={loading}>Actualiser</button>
-        {notifState !== 'granted' && notifState !== 'unsupported' && (
-          <button
-            className="btn small"
-            onClick={async () => setNotifState(await request())}
-            title="Recevoir une notification quand un message arrive, même si tu es sur un autre onglet"
-          >
-            🔔 Activer les notifications
+    <div className="feed-page">
+      <div className="feed-col">
+        <header className="topbar">
+          <span className="brand-inline">Fil unifié</span>
+          <div className="search">
+            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
+            <input
+              type="search"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Rechercher un message, une personne, une app"
+              aria-label="Rechercher dans le fil"
+            />
+          </div>
+          <button className="speak-btn" disabled title="La dictée vocale arrive bientôt">
+            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></svg>
+            Parler
           </button>
-        )}
-        <NotificationsToggle />
-        {unread > 0 && <span className="unread-badge">{unread} non lu{unread > 1 ? 's' : ''}</span>}
-        {unread > 0 && <button className="btn small" onClick={markAllRead}>Tout marquer lu</button>}
+          {headerExtra}
+        </header>
+
+        <div className="chips" role="tablist" aria-label="Vues du fil">
+          <button className={`chip${view === 'all' ? ' active' : ''}`} onClick={() => onViewChange('all')}>Tous</button>
+          <button className={`chip${view === 'unread' ? ' active' : ''}`} onClick={() => onViewChange('unread')}>Non lus</button>
+          <button className={`chip${view === 'reply' ? ' active' : ''}`} onClick={() => onViewChange('reply')}>À répondre</button>
+          {unread > 0 && view !== 'unread' && (
+            <button className="btn small" style={{ marginLeft: 'auto' }} onClick={markAllRead}>Tout marquer lu</button>
+          )}
+          {notifState !== 'granted' && notifState !== 'unsupported' && (
+            <button
+              className="btn small"
+              onClick={async () => setNotifState(await request())}
+              title="Recevoir une notification quand un message arrive, même si tu es sur un autre onglet"
+            >
+              🔔 Notifications
+            </button>
+          )}
+        </div>
+
+        <p className="kb-hint">Raccourcis : <kbd>j</kbd>/<kbd>k</kbd> naviguer · <kbd>Entrée</kbd> ouvrir · <kbd>u</kbd> marquer lu · <kbd>Échap</kbd> fermer</p>
+
+        {error && <p className="error small" style={{ margin: '0 1.25rem' }}>{error}</p>}
+
+        <div className="feed-scroll">
+          {loading ? (
+            <p className="empty">Chargement…</p>
+          ) : visible.length === 0 ? (
+            <p className="empty">
+              {total === 0
+                ? "Aucun événement pour l'instant. Ajoute une app pour commencer à remplir ton fil."
+                : 'Rien dans cette vue. Essaie une autre app ou un autre filtre.'}
+            </p>
+          ) : (
+            groups.map(([label, list]) => (
+              <section key={label} aria-label={label}>
+                <h3 className="day-group">{label}</h3>
+                <ul className="feed-list">
+                  {list.map((e) => (
+                    <EventCard
+                      key={e.id}
+                      event={e}
+                      selected={selectedId === e.id}
+                      onSelect={(id) => onSelect(selectedId === id ? null : id)}
+                    />
+                  ))}
+                </ul>
+              </section>
+            ))
+          )}
+
+          {hasMore && !loading && (
+            <button className="btn load-more" onClick={() => void load(false)} disabled={loadingMore}>
+              {loadingMore ? 'Chargement…' : 'Charger plus'}
+            </button>
+          )}
+        </div>
       </div>
 
-      <p className="hint kb-hint">Raccourcis : <kbd>j</kbd>/<kbd>k</kbd> naviguer · <kbd>Entrée</kbd> ouvrir · <kbd>u</kbd> marquer lu</p>
-
-      {error && <p className="error small">{error}</p>}
-
-      {loading ? (
-        <p className="empty">Chargement…</p>
-      ) : events.length === 0 ? (
-        <p className="empty">Aucun événement pour l'instant. Ajoute une connexion dans l'onglet « Connexions » pour commencer.</p>
-      ) : (
-        <ul className="feed-list">
-          {events.map((e) => (
-            <EventItem
-              key={e.id}
-              event={e}
-              onMarkRead={markRead}
-              selected={selectedId === e.id}
-              openSignal={selectedId === e.id ? detailSignal : 0}
-            />
-          ))}
-        </ul>
-      )}
-
-      {hasMore && !loading && (
-        <button className="btn load-more" onClick={() => void load(false)} disabled={loadingMore}>
-          {loadingMore ? 'Chargement…' : 'Charger plus'}
-        </button>
+      {/* Panneau détail : 3e colonne (desktop) / plein écran (mobile, via CSS) */}
+      {selected && (
+        <EventPanel
+          event={selected}
+          onMarkRead={(id) => void markRead(id)}
+          onArchive={(id) => void archive(id)}
+          onReplySent={() => void loadCounts()}
+          onClose={() => onSelect(null)}
+        />
       )}
     </div>
   );

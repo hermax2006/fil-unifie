@@ -48,7 +48,7 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
   res.status(500).json({ error: 'erreur serveur' });
 });
 
-app.listen(config.port, () => {
+app.listen(config.port, '0.0.0.0', () => {
   console.log(`Serveur sur http://localhost:${config.port}`);
   if (process.env.NODE_ENV !== 'test') {
     void startQueue();
