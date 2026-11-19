@@ -57,7 +57,8 @@ apiRouter.post('/events/read-all', isProd ? requireAuth : attachUser, (req: Auth
 const replySchema = z.object({
   body: z.string().trim().min(1).max(20000),
   subject: z.string().trim().max(500).optional(),
-  to: z.string().email().optional(),
+  // Email (IMAP) ou identifiant de conversation (Telegram : chat id).
+  to: z.string().trim().max(200).optional(),
 });
 
 apiRouter.post('/events/:id/reply', isProd ? requireAuth : attachUser, validateBody(replySchema), async (req: AuthRequest, res) => {
@@ -66,22 +67,24 @@ apiRouter.post('/events/:id/reply', isProd ? requireAuth : attachUser, validateB
 
   const event = getEventForReply(id, req.userId);
   if (!event) return void res.status(404).json({ error: 'événement introuvable' });
-  if (event.connector !== 'imap') {
+  const connector = registry.get(event.connector);
+  if (!connector?.reply) {
     return void res.status(400).json({ error: 'réponse non supportée pour ce connecteur' });
   }
 
-  const connector = registry.get('imap');
-  if (!connector?.reply) return void res.status(400).json({ error: 'connecteur IMAP indisponible' });
-
   const connection = event.connectionId
     ? getConnection(event.connectionId, event.accountId)
-    : findActiveConnection(event.accountId, 'imap');
-  if (!connection) return void res.status(404).json({ error: 'connexion IMAP introuvable' });
-  if (!connection.active) return void res.status(400).json({ error: 'connexion IMAP en pause' });
+    : findActiveConnection(event.accountId, event.connector);
+  if (!connection) return void res.status(404).json({ error: `connexion ${event.connector} introuvable` });
+  if (!connection.active) return void res.status(400).json({ error: `connexion ${event.connector} en pause` });
 
   const to = input.to ? [input.to] : event.author?.id ? [event.author.id] : [];
-  if (to.length === 0 || !to[0]?.includes('@')) {
+  if (to.length === 0) {
     return void res.status(400).json({ error: 'destinataire introuvable, précisez « to »' });
+  }
+  // IMAP : le destinataire doit être une adresse email.
+  if (event.connector === 'imap' && !to[0]?.includes('@')) {
+    return void res.status(400).json({ error: 'destinataire email invalide, précisez « to »' });
   }
 
   let config: Record<string, unknown> = {};
@@ -98,7 +101,7 @@ apiRouter.post('/events/:id/reply', isProd ? requireAuth : attachUser, validateB
     }
   }
 
-  const subject = input.subject || replySubject(event.title);
+  const subject = event.connector === 'imap' ? (input.subject || replySubject(event.title)) : undefined;
   const outboundId = createOutbound({
     eventId: event.id,
     connectionId: connection.id,

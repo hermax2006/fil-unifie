@@ -43,6 +43,7 @@ export function Connections({ user }: { user?: User }) {
   const [connSmtpPort, setConnSmtpPort] = useState('465');
   const [connSmtpSecure, setConnSmtpSecure] = useState(true);
   const [connSmtpUser, setConnSmtpUser] = useState('');
+  const [connBotToken, setConnBotToken] = useState('');
   const [connSaving, setConnSaving] = useState(false);
   const [connError, setConnError] = useState<string | null>(null);
   const [connTestingId, setConnTestingId] = useState<string | null>(null);
@@ -116,6 +117,11 @@ export function Connections({ user }: { user?: User }) {
       const data = await readJson(res);
       if (!res.ok) throw new Error(data.error || `Erreur ${res.status}`);
 
+      if (connConnectorId === 'telegram') {
+        if (!connBotToken.trim()) throw new Error('Jeton du bot Telegram requis (@BotFather)');
+        config = {};
+      }
+
       if (connConnectorId === 'imap' && connPass.trim()) {
         const tokenRes = await fetch(`/api/connections/connector-connections/${data.id}/tokens`, {
           method: 'PUT',
@@ -125,6 +131,16 @@ export function Connections({ user }: { user?: User }) {
         });
         const tokenData = await readJson(tokenRes);
         if (!tokenRes.ok) throw new Error(tokenData.error || `Erreur ${tokenRes.status} (mot de passe)`);
+      }
+      if (connConnectorId === 'telegram' && connBotToken.trim()) {
+        const tokenRes = await fetch(`/api/connections/connector-connections/${data.id}/tokens`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ tokens: { botToken: connBotToken.trim() }, accountId }),
+        });
+        const tokenData = await readJson(tokenRes);
+        if (!tokenRes.ok) throw new Error(tokenData.error || `Erreur ${tokenRes.status} (jeton bot)`);
       }
 
       setConnConfigUrl('');
@@ -136,6 +152,7 @@ export function Connections({ user }: { user?: User }) {
       setConnSmtpPort('465');
       setConnSmtpSecure(true);
       setConnSmtpUser('');
+      setConnBotToken('');
       loadConnections();
     } catch (e: any) {
       setConnError(e.message);
@@ -150,14 +167,14 @@ export function Connections({ user }: { user?: User }) {
     loadConnections();
   }
 
-  async function changePassword(id: string) {
-    const pass = window.prompt("Nouveau mot de passe d'application (chiffré en BDD, jamais réaffiché)");
+  async function changePassword(id: string, field = 'pass', label = "Nouveau mot de passe d'application (chiffré en BDD, jamais réaffiché)") {
+    const pass = window.prompt(label);
     if (!pass?.trim()) return;
     const res = await fetch(`/api/connections/connector-connections/${id}/tokens`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ tokens: { pass: pass.trim() }, accountId }),
+      body: JSON.stringify({ tokens: { [field]: pass.trim() }, accountId }),
     });
     const data = await readJson(res);
     setConnTestResults((prev) => ({
@@ -188,10 +205,12 @@ export function Connections({ user }: { user?: User }) {
       });
       const data = await readJson(res);
       if (!res.ok) throw new Error(data.error || `Erreur ${res.status}`);
-      const result = data.result as { mailboxes?: string[]; missing?: string[] };
+      const result = data.result as { mailboxes?: string[]; missing?: string[]; bot?: string; webhook?: string | null };
       const missing = result.missing?.length ? ` — dossiers absents : ${result.missing.join(', ')}` : '';
       const count = result.mailboxes?.length ? `${result.mailboxes.length} dossier(s)` : 'connexion OK';
-      setConnTestResults((prev) => ({ ...prev, [id]: `OK : ${count}${missing}` }));
+      const bot = result.bot ? `bot ${result.bot}` : count;
+      const hook = result.bot ? (result.webhook ? ' — ⚠ webhook actif (incompatible avec le polling)' : ' — polling prêt') : '';
+      setConnTestResults((prev) => ({ ...prev, [id]: `OK : ${bot}${hook}${missing}` }));
     } catch (e: any) {
       setConnTestResults((prev) => ({ ...prev, [id]: `Erreur : ${e.message}` }));
     } finally {
@@ -476,6 +495,21 @@ export function Connections({ user }: { user?: User }) {
             </label>
           </>
         )}
+        {connConnectorId === 'telegram' && (
+          <label>
+            Jeton du bot (@BotFather)
+            <input
+              type="password"
+              value={connBotToken}
+              onChange={(e) => setConnBotToken(e.target.value)}
+              placeholder="123456789:AA… — chiffré en BDD, jamais réaffiché"
+            />
+            <span className="hint">
+              Crée un bot avec <strong>@BotFather</strong> dans Telegram, puis colle le jeton.
+              Le fil lit les messages par polling (aucun domaine public requis).
+            </span>
+          </label>
+        )}
         <button className="btn" onClick={saveConnection} disabled={connSaving}>
           {connSaving ? 'Enregistrement...' : 'Ajouter la connexion'}
         </button>
@@ -493,6 +527,7 @@ export function Connections({ user }: { user?: User }) {
                 <strong>{c.connectorId}</strong> <span className="badge">{c.active ? 'actif' : 'en pause'}</span>
                 {c.config?.url && <code className="value">{c.config.url}</code>}
                 {c.config?.host && <span className="value">IMAP : {c.config.host} — SMTP : {c.config.smtpHost || c.config.host}</span>}
+                {c.connectorId === 'telegram' && <span className="value">Bot Telegram (jeton chiffré) — lecture par polling</span>}
                 <span className="value">Tokens : {c.hasTokens ? 'présents (chiffrés)' : 'aucun'}</span>
                 <span className="value">
                   Dernière sync : {c.lastPolledAt ? new Date(c.lastPolledAt).toLocaleString() : 'jamais'}
@@ -507,13 +542,18 @@ export function Connections({ user }: { user?: User }) {
                 )}
               </div>
               <div className="result-actions">
-                {c.connectorId === 'imap' && (
+                {(c.connectorId === 'imap' || c.connectorId === 'telegram') && (
                   <button className="btn small" onClick={() => testConnection(c.id)} disabled={connTestingId === c.id}>
                     {connTestingId === c.id ? 'Test...' : 'Tester'}
                   </button>
                 )}
                 {c.connectorId === 'imap' && c.hasTokens && (
                   <button className="btn small" onClick={() => changePassword(c.id)}>Changer le mot de passe</button>
+                )}
+                {c.connectorId === 'telegram' && c.hasTokens && (
+                  <button className="btn small" onClick={() => changePassword(c.id, 'botToken', 'Nouveau jeton du bot Telegram (chiffré en BDD)')}>
+                    Changer le jeton
+                  </button>
                 )}
                 <button className="btn small" onClick={() => toggleConnection(c.id, !c.active)}>
                   {c.active ? 'Mettre en pause' : 'Réactiver'}

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { UnifiedEvent } from '@fil/shared';
 import { readJson } from '../api.js';
-import { EventCard, EventPanel } from './EventItem.js';
+import { EventCard, EventPanel, REPLYABLE } from './EventItem.js';
 import { notify, permission, request } from '../notifications.js';
 
 /** Vues du fil : Tous / Non lus / À répondre (maquette). */
@@ -59,8 +59,8 @@ export function Feed({ view, onViewChange, appFilter, onAppChange, selectedId, o
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // « À répondre » : pour l'instant, seuls les mails (imap) peuvent être répondus.
-  const replyable = (e: UnifiedEvent) => e.connector === 'imap';
+  // « À répondre » : connecteurs qui savent envoyer une réponse (mail, Telegram).
+  const replyable = (e: UnifiedEvent) => REPLYABLE.has(e.connector);
 
   const matches = useCallback((e: UnifiedEvent) => {
     if (appFilter && e.connector !== appFilter) return false;

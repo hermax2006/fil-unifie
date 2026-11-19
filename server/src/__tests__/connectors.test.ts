@@ -53,7 +53,7 @@ describe('TelegramConnector', () => {
     const body = { message: { message_id: 1, date: 1700000000, text: 'hello', from: { id: 7, first_name: 'A' } } };
     const ev = c.normalize(wr({}, body), 'acc');
     expect(ev).toHaveLength(1);
-    expect(ev[0].externalId).toBe('1');
+    expect(ev[0].externalId).toBe('tg:7:1');
     expect(ev[0].body).toBe('hello');
     expect(ev[0].author?.name).toBe('A');
   });

@@ -5,7 +5,7 @@ import { AuthPanel } from './components/AuthPanel';
 import { ThemeToggle } from './components/ThemeToggle';
 import { Onboarding } from './components/Onboarding';
 import { RadialMenu } from './components/RadialMenu';
-import { appLabel } from './components/EventItem.js';
+import { appLabel, REPLYABLE } from './components/EventItem.js';
 import { useEffect, useRef, useState } from 'react';
 import { readJson } from './api.js';
 
@@ -86,7 +86,9 @@ export function App() {
   }, [avatarOpen]);
 
   const apps = Array.from(new Set(userConnectors));
-  const unreadReply = counts.byConnector['imap'] ?? 0;
+  const unreadReply = Object.entries(counts.byConnector)
+    .filter(([connector]) => REPLYABLE.has(connector))
+    .reduce((n, [, c]) => n + c, 0);
   const initial = user?.email?.charAt(0).toUpperCase() ?? '?';
 
   /** Brancher depuis le catalogue : Mail → onboarding ; les autres → réglages. */

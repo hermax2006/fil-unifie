@@ -72,11 +72,15 @@ Objectif : que l'application ressemble à un **produit**, pas à un prototype d'
 
 ## Phase 3 — Connecteurs réels
 
+> **Statut : Telegram (bot) opérationnel** — connexion par jeton BotFather dans Réglages, polling 60 s,
+> réponse depuis le panneau détail. Le jeton reste chiffré en BDD. RSS/Atom opérationnel en lecture.
+> OAuth Gmail/Outlook (3.1/3.2) toujours en attente des identifiants Google/Azure.
+
 | Tâche | Détails |
 |---|---|
 | **3.1 OAuth Gmail** | `oauth_states` (state nonce CSRF), `getAuthUrl()`/`exchangeCode()`, refresh tokens chiffrés, route `/auth/oauth/:connector/callback`. Nécessite un projet Google Cloud + identifiants OAuth. |
 | **3.2 OAuth Outlook** | Même socle, Azure AD app registration. |
-| **3.3 Réponses Telegram/Slack** | `reply()` de ces connecteurs (envoi dans le chat d'origine), bouton « Répondre » actif pour leurs événements. |
+| **3.3 Réponses Telegram/Slack** | ✅ Telegram : lecture par polling `getUpdates` (aucun domaine public requis) + réponse `sendMessage` depuis le fil (bouton « Envoyer par Telegram »), test `getMe` dans Réglages. RSS validé en direct (lecture seule). Reste : `reply()` Slack. |
 | **3.4 Google Calendar** | Connecteur polling API v3 ( OAuth de 3.1). |
 | **3.5 Catalogue d'apps** | Page « Applications » : cartes par connecteur avec statut (connecté/pas connecté), + `app_wishes` (liste de souhaits votables). |
 
