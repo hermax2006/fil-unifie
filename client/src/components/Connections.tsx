@@ -14,6 +14,13 @@ type ConnectorConnection = {
   lastRun?: { status: string; at: string; error: string | null } | null;
 };
 
+/** Réglages techniques connus des grands fournisseurs : l'utilisateur n'a qu'à saisir son adresse. */
+const MAIL_PRESETS: Record<'gmail' | 'outlook', { host: string; port: string; smtpHost: string; smtpPort: string; smtpSecure: boolean }> = {
+  gmail: { host: 'imap.gmail.com', port: '993', smtpHost: 'smtp.gmail.com', smtpPort: '465', smtpSecure: true },
+  outlook: { host: 'outlook.office365.com', port: '993', smtpHost: 'smtp.office365.com', smtpPort: '587', smtpSecure: false },
+};
+type MailProvider = 'gmail' | 'outlook' | 'other';
+
 /**
  * Onglet "Connexions"
  * - Génère une URL webhook sécurisée (/webhooks/w/:path_token)
@@ -32,11 +39,12 @@ export function Connections({ user }: { user?: User }) {
   const [endpoints, setEndpoints] = useState<Endpoint[]>([]);
   const [connections, setConnections] = useState<ConnectorConnection[]>([]);
   const [deliveries, setDeliveries] = useState<Record<string, any[] | 'loading' | null>>({});
-  const [connConnectorId, setConnConnectorId] = useState('rss');
+  const [connConnectorId, setConnConnectorId] = useState('imap');
   const [connConfigUrl, setConnConfigUrl] = useState('');
+  const [mailProvider, setMailProvider] = useState<MailProvider>('gmail');
   const [connHost, setConnHost] = useState('');
   const [connPort, setConnPort] = useState('993');
-  const [connUser, setConnUser] = useState('');
+  const [connUser, setConnUser] = useState(user?.email ?? '');
   const [connPass, setConnPass] = useState('');
   const [connMailboxes, setConnMailboxes] = useState('INBOX');
   const [connSmtpHost, setConnSmtpHost] = useState('');
@@ -93,17 +101,20 @@ export function Connections({ user }: { user?: User }) {
         config = { url: connConfigUrl.trim() };
       }
       if (connConnectorId === 'imap') {
-        if (!connHost.trim() || !connUser.trim()) throw new Error('Hôte et utilisateur IMAP requis');
+        const preset = mailProvider === 'other' ? null : MAIL_PRESETS[mailProvider];
+        const host = preset ? preset.host : connHost.trim();
+        if (!connUser.trim()) throw new Error('Adresse email requise');
+        if (!host) throw new Error('Hôte IMAP requis');
         const mailboxes = connMailboxes.split(',').map((m) => m.trim()).filter(Boolean);
         config = {
-          host: connHost.trim(),
-          port: Number(connPort) || 993,
+          host,
+          port: preset ? Number(preset.port) : Number(connPort) || 993,
           secure: true,
           user: connUser.trim(),
           mailboxes: mailboxes.length > 0 ? mailboxes : ['INBOX'],
-          smtpHost: connSmtpHost.trim() || undefined,
-          smtpPort: Number(connSmtpPort) || undefined,
-          smtpSecure: connSmtpSecure,
+          smtpHost: preset ? preset.smtpHost : connSmtpHost.trim() || undefined,
+          smtpPort: preset ? Number(preset.smtpPort) : Number(connSmtpPort) || undefined,
+          smtpSecure: preset ? preset.smtpSecure : connSmtpSecure,
           smtpUser: connSmtpUser.trim() || undefined,
         };
       }
@@ -325,119 +336,27 @@ export function Connections({ user }: { user?: User }) {
 
   return (
     <div className="connections">
-      <h2>Gérer les connexions</h2>
+      <h2>Mes applications</h2>
+
+      <h3>Ajouter une application</h3>
       <p className="hint">
-        URLs sécurisées via <code>/webhooks/w/:path_token</code>. Secret chiffré (AES-256-GCM), affiché une seule fois.
-      </p>
-
-      <div className="form">
-        {!user && (
-          <label>
-            ID du compte (dev)
-            <input value={accountId} onChange={(e) => setAccountId(e.target.value)} placeholder="mon-compte" />
-          </label>
-        )}
-        {user && <div className="info">Compte lié : <code>{user.accountId ?? '—'}</code> ({user.email})</div>}
-        <label>
-          Connecteur
-          <select value={connectorId} onChange={(e) => setConnectorId(e.target.value)}>
-            <option value="webhook">webhook (générique)</option>
-            <option value="telegram">telegram</option>
-            <option value="slack">slack</option>
-          </select>
-        </label>
-        <button className="btn" onClick={generate} disabled={loading}>
-          {loading ? 'Génération...' : 'Générer une URL webhook'}
-        </button>
-      </div>
-
-      {error && <p className="error">{error}</p>}
-
-      {result && (
-        <div className="result">
-          <div className="result-row">
-            <span className="label">URL webhook</span>
-            <code className="value">{result.url}</code>
-            <button className="btn small" onClick={() => copy(result.url, 'url')}>{copied === 'url' ? 'Copié !' : 'Copier'}</button>
-          </div>
-          <div className="result-row">
-            <span className="label">Secret</span>
-            <code className="value secret">{result.secret}</code>
-            <button className="btn small" onClick={() => copy(result.secret, 'secret')}>{copied === 'secret' ? 'Copié !' : 'Copier'}</button>
-          </div>
-          <p className="warning">{result.warning}</p>
-          <div className="result-actions">
-            <button className="btn" onClick={sendTest} disabled={testLoading}>{testLoading ? 'Envoi...' : 'Envoyer un webhook de test'}</button>
-            <button className="btn" onClick={() => copy(curlCommand(), 'curl')}>{copied === 'curl' ? 'Copié !' : 'Copier curl'}</button>
-          </div>
-          {testResult && <p className={testResult.startsWith('OK') ? 'success' : 'error'}>{testResult}</p>}
-          <details className="details"><summary>Voir la commande curl</summary><pre className="code-block">{curlCommand()}</pre></details>
-        </div>
-      )}
-
-      <h3>Endpoints existants</h3>
-      {endpoints.length === 0 ? (
-        <p className="hint">Aucun endpoint pour ce compte.</p>
-      ) : (
-        <ul className="endpoint-list">
-          {endpoints.map((ep) => (
-            <li key={ep.id} className={`endpoint ${ep.active ? '' : 'revoked'}`}>
-              <div>
-                <strong>{ep.connectorId}</strong> <span className="badge">{ep.active ? 'actif' : 'révoqué'}</span>
-                {ep.url ? (
-                  <code className="value">{ep.url}</code>
-                ) : (
-                  <span className="value">URL masquée (jeton haché) — régénérer pour obtenir une nouvelle URL.</span>
-                )}
-              </div>
-              {ep.active && (
-                <div className="result-actions">
-                  <button className="btn small" onClick={() => regenerate(ep.id)}>Régénérer URL + secret</button>
-                  <button className="btn small" onClick={() => rotate(ep.id)}>Nouveau secret</button>
-                  <button className="btn small danger" onClick={() => revoke(ep.id)}>Révoquer</button>
-                </div>
-              )}
-              <details className="deliveries" onToggle={(e) => {
-                const el = e.currentTarget as HTMLDetailsElement;
-                if (el.open && !deliveries[ep.id]) void loadDeliveries(ep.id);
-              }}>
-                <summary>Historique des réceptions</summary>
-                {deliveries[ep.id] === 'loading' && <p className="hint">Chargement…</p>}
-                {Array.isArray(deliveries[ep.id]) && (deliveries[ep.id] as any[]).length === 0 && (
-                  <p className="hint">Aucune réception enregistrée.</p>
-                )}
-                {Array.isArray(deliveries[ep.id]) && (deliveries[ep.id] as any[]).map((d, i) => (
-                  <div key={i} className="outbound-item">
-                    <div className="outbound-head">
-                      <span className={d.status === 'accepted' ? 'outbound-status sent' : 'outbound-status failed'}>
-                        {d.status === 'accepted' ? `✅ accepté (${d.eventsCount ?? 0} événement${(d.eventsCount ?? 0) > 1 ? 's' : ''})` : '❌ rejeté'}
-                      </span>
-                      <span className="outbound-date">{new Date(d.createdAt).toLocaleString()}</span>
-                    </div>
-                    {d.error && <div className="error small">{d.error}</div>}
-                  </div>
-                ))}
-              </details>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <h3>Connexions connecteurs (polling)</h3>
-      <p className="hint">
-        Pour les sources interrogées périodiquement (ex. flux RSS). Le serveur vérifie les connexions actives
-        toutes les <code>POLL_INTERVAL_MS</code> (60 s par défaut).
+        Choisis une app, saisis ton adresse et ton mot de passe d'application : le reste est préconfiguré.
+        Le fil vérifie les sources actives toutes les <code>60 s</code>.
       </p>
 
       <div className="form">
         <label>
           Connecteur
-          <select value={connConnectorId} onChange={(e) => setConnConnectorId(e.target.value)}>
-            <option value="rss">rss (RSS / Atom)</option>
-            <option value="imap">imap (mail)</option>
-            <option value="webhook">webhook (générique)</option>
-            <option value="telegram">telegram</option>
-            <option value="slack">slack</option>
+          <select value={connConnectorId} onChange={(e) => {
+            const v = e.target.value;
+            setConnConnectorId(v);
+            if (v === 'imap' && !connUser && user?.email) setConnUser(user.email);
+          }}>
+            <option value="imap">Messagerie (Gmail, Outlook, IMAP)</option>
+            <option value="telegram">Telegram (bot)</option>
+            <option value="rss">Flux RSS / Atom</option>
+            <option value="slack">Slack</option>
+            <option value="webhook">Webhook générique</option>
           </select>
         </label>
         {connConnectorId === 'rss' && (
@@ -453,51 +372,92 @@ export function Connections({ user }: { user?: User }) {
         {connConnectorId === 'imap' && (
           <>
             <label>
-              Hôte IMAP
-              <input value={connHost} onChange={(e) => setConnHost(e.target.value)} placeholder="imap.example.com" />
+              Fournisseur de messagerie
+              <select value={mailProvider} onChange={(e) => setMailProvider(e.target.value as MailProvider)}>
+                <option value="gmail">Gmail</option>
+                <option value="outlook">Outlook / Microsoft 365</option>
+                <option value="other">Autre (IMAP)</option>
+              </select>
             </label>
-            <label>
-              Port
-              <input value={connPort} onChange={(e) => setConnPort(e.target.value)} placeholder="993" />
+            <label className="full-width">
+              Adresse email
+              <input
+                type="email"
+                value={connUser}
+                onChange={(e) => setConnUser(e.target.value)}
+                placeholder="moi@gmail.com"
+                autoComplete="email"
+              />
             </label>
-            <label>
-              Utilisateur
-              <input value={connUser} onChange={(e) => setConnUser(e.target.value)} placeholder="moi@example.com" />
-            </label>
-            <label>
-              Dossiers (séparés par des virgules)
-              <input value={connMailboxes} onChange={(e) => setConnMailboxes(e.target.value)} placeholder="INBOX, Archives" />
-            </label>
-            <label>
+            <label className="full-width">
               Mot de passe d'application
               <input
                 type="password"
                 value={connPass}
                 onChange={(e) => setConnPass(e.target.value)}
                 placeholder="chiffré en BDD, jamais réaffiché"
+                autoComplete="new-password"
               />
+              {mailProvider === 'gmail' && (
+                <span className="hint">
+                  Pas ton mot de passe Gmail habituel : crée un{' '}
+                  <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noreferrer">
+                    mot de passe d'application
+                  </a>{' '}
+                  (16 caractères, validation en deux étapes requise).
+                </span>
+              )}
+              {mailProvider === 'outlook' && (
+                <span className="hint">
+                  Utilise ton mot de passe de compte Microsoft (ou un mot de passe d'application si activé).
+                </span>
+              )}
             </label>
-            <label>
-              Hôte SMTP (réponses)
-              <input value={connSmtpHost} onChange={(e) => setConnSmtpHost(e.target.value)} placeholder="défaut : hôte IMAP" />
-            </label>
-            <label>
-              Port SMTP
-              <input value={connSmtpPort} onChange={(e) => setConnSmtpPort(e.target.value)} placeholder="465" />
-            </label>
-            <label>
-              Utilisateur SMTP
-              <input value={connSmtpUser} onChange={(e) => setConnSmtpUser(e.target.value)} placeholder="défaut : utilisateur IMAP" />
-            </label>
-            <label className="checkbox">
-              <input type="checkbox" checked={connSmtpSecure} onChange={(e) => setConnSmtpSecure(e.target.checked)} />
-              TLS direct (port 465)
-            </label>
+            <details className="details">
+              <summary>Options avancées</summary>
+              {mailProvider === 'other' && (
+                <>
+                  <label>
+                    Hôte IMAP
+                    <input value={connHost} onChange={(e) => setConnHost(e.target.value)} placeholder="imap.example.com" />
+                  </label>
+                  <label>
+                    Port IMAP
+                    <input value={connPort} onChange={(e) => setConnPort(e.target.value)} inputMode="numeric" placeholder="993" />
+                  </label>
+                  <label>
+                    Hôte SMTP (réponses)
+                    <input value={connSmtpHost} onChange={(e) => setConnSmtpHost(e.target.value)} placeholder="smtp.example.com" />
+                  </label>
+                  <label>
+                    Port SMTP
+                    <input value={connSmtpPort} onChange={(e) => setConnSmtpPort(e.target.value)} inputMode="numeric" placeholder="465" />
+                  </label>
+                  <label>
+                    Utilisateur SMTP
+                    <input value={connSmtpUser} onChange={(e) => setConnSmtpUser(e.target.value)} placeholder="défaut : adresse email" />
+                  </label>
+                  <label className="checkbox">
+                    <input type="checkbox" checked={connSmtpSecure} onChange={(e) => setConnSmtpSecure(e.target.checked)} />
+                    TLS direct (port 465)
+                  </label>
+                </>
+              )}
+              <label>
+                Dossiers (séparés par des virgules)
+                <input value={connMailboxes} onChange={(e) => setConnMailboxes(e.target.value)} placeholder="INBOX" />
+              </label>
+              {mailProvider !== 'other' && (
+                <p className="hint">
+                  Serveurs utilisés automatiquement : {MAIL_PRESETS[mailProvider].host} et {MAIL_PRESETS[mailProvider].smtpHost}.
+                </p>
+              )}
+            </details>
           </>
         )}
         {connConnectorId === 'telegram' && (
           <label>
-            Jeton du bot (@BotFather)
+            Jeton du bot
             <input
               type="password"
               value={connBotToken}
@@ -505,20 +465,21 @@ export function Connections({ user }: { user?: User }) {
               placeholder="123456789:AA… — chiffré en BDD, jamais réaffiché"
             />
             <span className="hint">
-              Crée un bot avec <strong>@BotFather</strong> dans Telegram, puis colle le jeton.
-              Le fil lit les messages par polling (aucun domaine public requis).
+              Ouvre <a href="https://t.me/BotFather" target="_blank" rel="noreferrer">@BotFather</a>, envoie
+              <code>/newbot</code>, choisis un nom, puis colle ici le jeton qu'il renvoie. Le fil lit les messages
+              par polling (aucun domaine public requis).
             </span>
           </label>
         )}
         <button className="btn" onClick={saveConnection} disabled={connSaving}>
-          {connSaving ? 'Enregistrement...' : 'Ajouter la connexion'}
+          {connSaving ? 'Enregistrement...' : "Ajouter l'application"}
         </button>
       </div>
 
       {connError && <p className="error">{connError}</p>}
 
       {connections.length === 0 ? (
-        <p className="hint">Aucune connexion polling pour ce compte.</p>
+        <p className="hint">Aucune application connectée pour l'instant.</p>
       ) : (
         <ul className="endpoint-list">
           {connections.map((c) => (
@@ -564,6 +525,108 @@ export function Connections({ user }: { user?: User }) {
           ))}
         </ul>
       )}
+
+      <details className="details advanced">
+        <summary>Avancé — webhooks (développeurs)</summary>
+
+        <h3>Webhooks (développeurs)</h3>
+        <p className="hint">
+          URLs sécurisées via <code>/webhooks/w/:path_token</code>. Secret chiffré (AES-256-GCM), affiché une seule fois.
+        </p>
+
+        <div className="form">
+          {!user && (
+            <label>
+              ID du compte (dev)
+              <input value={accountId} onChange={(e) => setAccountId(e.target.value)} placeholder="mon-compte" />
+            </label>
+          )}
+          {user && <div className="info">Compte lié : <code>{user.accountId ?? '—'}</code> ({user.email})</div>}
+          <label>
+            Connecteur
+            <select value={connectorId} onChange={(e) => setConnectorId(e.target.value)}>
+              <option value="webhook">webhook (générique)</option>
+              <option value="telegram">telegram</option>
+              <option value="slack">slack</option>
+            </select>
+          </label>
+          <button className="btn" onClick={generate} disabled={loading}>
+            {loading ? 'Génération...' : 'Générer une URL webhook'}
+          </button>
+        </div>
+
+        {error && <p className="error">{error}</p>}
+
+        {result && (
+          <div className="result">
+            <div className="result-row">
+              <span className="label">URL webhook</span>
+              <code className="value">{result.url}</code>
+              <button className="btn small" onClick={() => copy(result.url, 'url')}>{copied === 'url' ? 'Copié !' : 'Copier'}</button>
+            </div>
+            <div className="result-row">
+              <span className="label">Secret</span>
+              <code className="value secret">{result.secret}</code>
+              <button className="btn small" onClick={() => copy(result.secret, 'secret')}>{copied === 'secret' ? 'Copié !' : 'Copier'}</button>
+            </div>
+            <p className="warning">{result.warning}</p>
+            <div className="result-actions">
+              <button className="btn" onClick={sendTest} disabled={testLoading}>{testLoading ? 'Envoi...' : 'Envoyer un webhook de test'}</button>
+              <button className="btn" onClick={() => copy(curlCommand(), 'curl')}>{copied === 'curl' ? 'Copié !' : 'Copier curl'}</button>
+            </div>
+            {testResult && <p className={testResult.startsWith('OK') ? 'success' : 'error'}>{testResult}</p>}
+            <details className="details"><summary>Voir la commande curl</summary><pre className="code-block">{curlCommand()}</pre></details>
+          </div>
+        )}
+
+        <h3>Endpoints existants</h3>
+        {endpoints.length === 0 ? (
+          <p className="hint">Aucun endpoint pour ce compte.</p>
+        ) : (
+          <ul className="endpoint-list">
+            {endpoints.map((ep) => (
+              <li key={ep.id} className={`endpoint ${ep.active ? '' : 'revoked'}`}>
+                <div>
+                  <strong>{ep.connectorId}</strong> <span className="badge">{ep.active ? 'actif' : 'révoqué'}</span>
+                  {ep.url ? (
+                    <code className="value">{ep.url}</code>
+                  ) : (
+                    <span className="value">URL masquée (jeton haché) — régénérer pour obtenir une nouvelle URL.</span>
+                  )}
+                </div>
+                {ep.active && (
+                  <div className="result-actions">
+                    <button className="btn small" onClick={() => regenerate(ep.id)}>Régénérer URL + secret</button>
+                    <button className="btn small" onClick={() => rotate(ep.id)}>Nouveau secret</button>
+                    <button className="btn small danger" onClick={() => revoke(ep.id)}>Révoquer</button>
+                  </div>
+                )}
+                <details className="deliveries" onToggle={(e) => {
+                  const el = e.currentTarget as HTMLDetailsElement;
+                  if (el.open && !deliveries[ep.id]) void loadDeliveries(ep.id);
+                }}>
+                  <summary>Historique des réceptions</summary>
+                  {deliveries[ep.id] === 'loading' && <p className="hint">Chargement…</p>}
+                  {Array.isArray(deliveries[ep.id]) && (deliveries[ep.id] as any[]).length === 0 && (
+                    <p className="hint">Aucune réception enregistrée.</p>
+                  )}
+                  {Array.isArray(deliveries[ep.id]) && (deliveries[ep.id] as any[]).map((d, i) => (
+                    <div key={i} className="outbound-item">
+                      <div className="outbound-head">
+                        <span className={d.status === 'accepted' ? 'outbound-status sent' : 'outbound-status failed'}>
+                          {d.status === 'accepted' ? `✅ accepté (${d.eventsCount ?? 0} événement${(d.eventsCount ?? 0) > 1 ? 's' : ''})` : '❌ rejeté'}
+                        </span>
+                        <span className="outbound-date">{new Date(d.createdAt).toLocaleString()}</span>
+                      </div>
+                      {d.error && <div className="error small">{d.error}</div>}
+                    </div>
+                  ))}
+                </details>
+              </li>
+            ))}
+          </ul>
+        )}
+      </details>
     </div>
   );
 }

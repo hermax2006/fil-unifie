@@ -752,6 +752,12 @@ body {
 .form label { display: flex; flex-direction: column; gap: 0.4rem; font-size: 0.95rem; }
 .form label.checkbox { flex-direction: row; align-items: center; gap: 0.5rem; }
 .form .full-width { grid-column: 1 / -1; }
+.form > .details { grid-column: 1 / -1; }
+.connections .form { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+.connections .form > .btn { grid-column: 1 / -1; justify-self: start; }
+.connections h2 { margin-bottom: 0.25rem; }
+.connections h3 { margin-top: 1.6rem; }
+@media (max-width: 700px) { .connections .form { grid-template-columns: 1fr; } }
 
 .result {
   border: 1px solid var(--border);

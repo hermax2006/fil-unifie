@@ -3,13 +3,20 @@ import { readJson } from '../api.js';
 
 type User = { id: string; email: string; accountId?: string } | null;
 
+const MAIL_PRESETS: Record<'gmail' | 'outlook', { host: string; port: string; smtpHost: string; smtpPort: string }> = {
+  gmail: { host: 'imap.gmail.com', port: '993', smtpHost: 'smtp.gmail.com', smtpPort: '465' },
+  outlook: { host: 'outlook.office365.com', port: '993', smtpHost: 'smtp.office365.com', smtpPort: '587' },
+};
+type MailProvider = 'gmail' | 'outlook' | 'other';
+
 /**
  * Assistant de première connexion.
  * - Affiché seulement si l'utilisateur n'a AUCUNE connexion (polling ou webhook).
- * - Propose d'ajouter une boîte mail (IMAP) en pas-à-pas, avec aide pour le
- *   mot de passe d'application Google, ou de passer par les Connexions.
- * - « Plus tard » est persisté (localStorage) pour ne pas reposer la question
- *   à chaque chargement tant qu'il n'y a pas de connexion.
+ * - Propose d'ajouter une boîte mail en 2 champs (adresse + mot de passe
+ *   d'application) : Gmail/Outlook sont préconfigurés, les réglages techniques
+ *   restent dans « Options avancées ». OAuth « Se connecter avec Google »
+ *   arrivera en Phase 3.
+ * - « Plus tard » est persisté (localStorage) pour ne pas reposer la question.
  */
 export function Onboarding({ user, onClose, onFinish }: {
   user: User;
@@ -17,6 +24,7 @@ export function Onboarding({ user, onClose, onFinish }: {
   onFinish: (tab: 'feed' | 'connections') => void;
 }) {
   const [step, setStep] = useState<'welcome' | 'mail' | 'done'>('welcome');
+  const [provider, setProvider] = useState<MailProvider>('gmail');
   const [host, setHost] = useState('imap.gmail.com');
   const [port, setPort] = useState('993');
   const [mailUser, setMailUser] = useState(user?.email ?? '');
@@ -32,16 +40,18 @@ export function Onboarding({ user, onClose, onFinish }: {
     setBusy(true);
     setError(null);
     try {
+      const preset = provider === 'other' ? null : MAIL_PRESETS[provider];
       const config = {
-        host: host.trim(),
-        port: Number(port) || 993,
+        host: preset ? preset.host : host.trim(),
+        port: preset ? Number(preset.port) : Number(port) || 993,
         secure: true,
         user: mailUser.trim(),
         mailboxes: mailboxes.split(',').map((m) => m.trim()).filter(Boolean),
-        smtpHost: smtpHost.trim(),
-        smtpPort: Number(smtpPort) || 465,
-        smtpSecure,
+        smtpHost: preset ? preset.smtpHost : smtpHost.trim(),
+        smtpPort: preset ? Number(preset.smtpPort) : Number(smtpPort) || 465,
+        smtpSecure: preset ? preset.smtpPort === '465' : smtpSecure,
       };
+      if (!config.host) throw new Error('Hôte IMAP requis');
       const res = await fetch('/api/connections/connector-connections', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -109,20 +119,16 @@ export function Onboarding({ user, onClose, onFinish }: {
             <h2 className="detail-title">Ajouter une boîte mail</h2>
             <div className="form">
               <label>
-                Hôte IMAP
-                <input value={host} onChange={(e) => setHost(e.target.value)} placeholder="imap.gmail.com" />
-              </label>
-              <label>
-                Port
-                <input value={port} onChange={(e) => setPort(e.target.value)} inputMode="numeric" />
+                Fournisseur
+                <select value={provider} onChange={(e) => setProvider(e.target.value as MailProvider)}>
+                  <option value="gmail">Gmail</option>
+                  <option value="outlook">Outlook / Microsoft 365</option>
+                  <option value="other">Autre (IMAP)</option>
+                </select>
               </label>
               <label>
                 Adresse email
-                <input value={mailUser} onChange={(e) => setMailUser(e.target.value)} />
-              </label>
-              <label>
-                Dossiers (séparés par des virgules)
-                <input value={mailboxes} onChange={(e) => setMailboxes(e.target.value)} placeholder="INBOX" />
+                <input type="email" value={mailUser} onChange={(e) => setMailUser(e.target.value)} autoComplete="email" />
               </label>
               <label className="full-width">
                 Mot de passe d'application
@@ -131,37 +137,73 @@ export function Onboarding({ user, onClose, onFinish }: {
                   value={pass}
                   onChange={(e) => setPass(e.target.value)}
                   placeholder="16 caractères (pas ton mot de passe habituel)"
+                  autoComplete="new-password"
                 />
               </label>
-              <label>
-                Hôte SMTP (pour répondre)
-                <input value={smtpHost} onChange={(e) => setSmtpHost(e.target.value)} placeholder="smtp.gmail.com" />
-              </label>
-              <label>
-                Port SMTP
-                <input value={smtpPort} onChange={(e) => setSmtpPort(e.target.value)} inputMode="numeric" />
-              </label>
+              <details className="details">
+                <summary>Options avancées</summary>
+                {provider === 'other' && (
+                  <>
+                    <label>
+                      Hôte IMAP
+                      <input value={host} onChange={(e) => setHost(e.target.value)} placeholder="imap.example.com" />
+                    </label>
+                    <label>
+                      Port IMAP
+                      <input value={port} onChange={(e) => setPort(e.target.value)} inputMode="numeric" />
+                    </label>
+                    <label>
+                      Hôte SMTP (pour répondre)
+                      <input value={smtpHost} onChange={(e) => setSmtpHost(e.target.value)} placeholder="smtp.example.com" />
+                    </label>
+                    <label>
+                      Port SMTP
+                      <input value={smtpPort} onChange={(e) => setSmtpPort(e.target.value)} inputMode="numeric" />
+                    </label>
+                    <label className="checkbox">
+                      <input type="checkbox" checked={smtpSecure} onChange={(e) => setSmtpSecure(e.target.checked)} />
+                      TLS direct (port 465)
+                    </label>
+                  </>
+                )}
+                <label>
+                  Dossiers (séparés par des virgules)
+                  <input value={mailboxes} onChange={(e) => setMailboxes(e.target.value)} placeholder="INBOX" />
+                </label>
+                {provider !== 'other' && (
+                  <p className="hint">
+                    Serveurs utilisés automatiquement : {MAIL_PRESETS[provider].host} et {MAIL_PRESETS[provider].smtpHost}.
+                  </p>
+                )}
+              </details>
             </div>
 
-            <div className="onboard-help">
-              <strong>📧 Tu utilises Gmail ?</strong>
-              <ol>
-                <li>
-                  Active la <strong>validation en deux étapes</strong> :{' '}
-                  <a href="https://myaccount.google.com/security" target="_blank" rel="noreferrer">myaccount.google.com/security</a>
-                </li>
-                <li>
-                  Crée un <strong>mot de passe d'application</strong> (16 caractères) :{' '}
-                  <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noreferrer">myaccount.google.com/apppasswords</a>{' '}
-                  — <em>connecté au bon compte Google</em>
-                </li>
-                <li>Colle-le ci-dessus. Les espaces sont retirés automatiquement.</li>
-              </ol>
-            </div>
+            {provider === 'gmail' && (
+              <div className="onboard-help">
+                <strong>📧 Mot de passe d'application Gmail</strong>
+                <ol>
+                  <li>
+                    Active la <strong>validation en deux étapes</strong> :{' '}
+                    <a href="https://myaccount.google.com/security" target="_blank" rel="noreferrer">myaccount.google.com/security</a>
+                  </li>
+                  <li>
+                    Crée un <strong>mot de passe d'application</strong> (16 caractères) :{' '}
+                    <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noreferrer">myaccount.google.com/apppasswords</a>{' '}
+                    — <em>connecté au bon compte Google</em>
+                  </li>
+                  <li>Colle-le ci-dessus. Les espaces sont retirés automatiquement.</li>
+                </ol>
+                <p className="hint">La connexion en 1 clic avec Google arrivera ensuite (OAuth).</p>
+              </div>
+            )}
 
             {error && <p className="error small">{error}</p>}
             <div className="result-actions">
-              <button className="btn" onClick={createMailbox} disabled={busy || !host.trim() || !mailUser.trim()}>
+              <button
+                className="btn"
+                onClick={createMailbox}
+                disabled={busy || !mailUser.trim() || (provider === 'other' && !host.trim())}
+              >
                 {busy ? 'Ajout…' : 'Ajouter la boîte mail'}
               </button>
               <button className="btn" onClick={() => setStep('welcome')} disabled={busy}>Retour</button>
