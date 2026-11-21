@@ -13,9 +13,15 @@ function parseOrigins(raw?: string): string[] {
   return raw.split(',').map((s) => s.trim()).filter(Boolean);
 }
 
+const port = Number(process.env.PORT ?? 4000);
+
 export const config = {
-  port: Number(process.env.PORT ?? 4000),
+  port,
   isProd,
+  /** URL publique du serveur (derrière un proxy : https://fil.example.com). */
+  publicBaseUrl: (process.env.PUBLIC_BASE_URL ?? `http://localhost:${port}`).replace(/\/$/, ''),
+  /** URL de l'app (redirections OAuth). Vide en prod = même origine. */
+  clientUrl: (process.env.CLIENT_URL ?? (isProd ? '' : 'http://localhost:5173')).replace(/\/$/, ''),
   allowedOrigins: parseOrigins(process.env.ALLOWED_ORIGINS),
   /** Polling des sources distantes (RSS, IMAP...). Désactivable via POLLING_DISABLED=true. */
   pollingEnabled: process.env.POLLING_DISABLED !== 'true',

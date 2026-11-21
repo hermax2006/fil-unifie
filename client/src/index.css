@@ -755,6 +755,13 @@ body {
 .form > .details { grid-column: 1 / -1; }
 .connections .form { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
 .connections .form > .btn { grid-column: 1 / -1; justify-self: start; }
+.connections .form > .oauth-cta,
+.form > .oauth-cta { grid-column: 1 / -1; }
+.oauth-cta { display: flex; align-items: center; gap: 0.9rem; flex-wrap: wrap; padding: 0.7rem 0.9rem; border: 1px solid var(--accent); border-radius: 12px; background: var(--accent-soft); }
+.oauth-cta .hint { margin: 0; }
+.notice { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin: 0.9rem 1.6rem 0; padding: 0.7rem 0.9rem; border-radius: 12px; font-size: 0.92rem; border: 1px solid var(--border); background: var(--surface); }
+.notice.success { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-strong); }
+.notice.error { border-color: #e0a3a3; background: #fdeeee; color: #8a2b2b; }
 .connections h2 { margin-bottom: 0.25rem; }
 .connections h3 { margin-top: 1.6rem; }
 @media (max-width: 700px) { .connections .form { grid-template-columns: 1fr; } }

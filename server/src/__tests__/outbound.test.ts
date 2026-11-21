@@ -29,13 +29,16 @@ describe('outbound_messages', () => {
 
   it('liste l historique par événement et par compte', () => {
     const eventId = `evt-${randomUUID()}`;
-    const id = createOutbound({ eventId, accountId: 'acc-list', to: ['a@b.c'], subject: 'Re: X', body: 'ok' });
+    // Compte unique : les tests tournent sur la vraie base, un run interrompu
+    // peut laisser des lignes derrière lui.
+    const accountId = `acc-list-${randomUUID()}`;
+    const id = createOutbound({ eventId, accountId, to: ['a@b.c'], subject: 'Re: X', body: 'ok' });
     ids.push(id);
     markOutboundSent(id, '<m@example.com>');
 
     expect(listOutboundForEvent(eventId)).toHaveLength(1);
     expect(listOutboundForEvent(eventId)[0].status).toBe('sent');
-    expect(listOutboundForAccounts(['acc-list'])).toHaveLength(1);
+    expect(listOutboundForAccounts([accountId])).toHaveLength(1);
     expect(listOutboundForAccounts(['autre-compte'])).toHaveLength(0);
   });
 

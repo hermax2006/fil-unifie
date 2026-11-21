@@ -6,6 +6,7 @@ import { apiRouter } from './routes/api.js';
 import { webhooksRouter } from './webhooks/router.js';
 import { authRouter } from './routes/auth.js';
 import { connectionsRouter } from './routes/connections.js';
+import { oauthRouter } from './routes/oauth.js';
 import { migrate } from './db/client.js';
 import { startPoller, stopPoller } from './queues/poller.js';
 import { startQueue, stopQueue } from './queues/index.js';
@@ -36,6 +37,7 @@ app.use(express.json({
 }));
 app.use(cookieParser());
 
+app.use('/auth', oauthRouter);
 app.use('/auth', authRouter);
 app.use('/api/connections', apiLimiter, connectionsRouter);
 app.use('/api', apiLimiter, apiRouter);

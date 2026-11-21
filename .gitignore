@@ -38,3 +38,7 @@ redis-data
 tmp
 .cache
 .env.production
+
+# SQLite (données locales/volume Docker)
+server/data/
+*.sqlite-*

@@ -22,6 +22,11 @@ services:
       # pour les appels directs si le domaine est servi ailleurs.
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
       # (trust proxy est activé automatiquement en NODE_ENV=production)
+      # URL publique (utilisée pour l'URI de redirection OAuth Google).
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
+      # OAuth Google : « Se connecter avec Google » (laisser vide pour désactiver).
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
     volumes:
       - server-data:/app/data
     depends_on:

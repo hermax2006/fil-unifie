@@ -8,7 +8,7 @@ import { validateBody, validateQuery } from '../utils/validate.js';
 import { getConnection, findActiveConnection } from '../db/repos/connections.repo.js';
 import { createOutbound, markOutboundSent, markOutboundFailed, listOutboundForEvent, listOutboundForAccounts } from '../db/repos/outbound.repo.js';
 import { listAccountsForUser } from '../db/repos/accounts.repo.js';
-import { decryptToken } from '../crypto/tokens.js';
+import { freshConnectionTokens } from '../oauth/tokens.js';
 import { replySubject } from '../connectors/imap.connector.js';
 
 export const apiRouter = Router();
@@ -93,12 +93,10 @@ apiRouter.post('/events/:id/reply', isProd ? requireAuth : attachUser, validateB
   }
 
   let tokens: Record<string, unknown> | null = null;
-  if (connection.encrypted_tokens_json) {
-    try {
-      tokens = JSON.parse(decryptToken(connection.encrypted_tokens_json)) as Record<string, unknown>;
-    } catch {
-      return void res.status(500).json({ error: 'tokens IMAP illisibles (clé de chiffrement ?)' });
-    }
+  try {
+    tokens = await freshConnectionTokens(connection);
+  } catch (err) {
+    return void res.status(401).json({ error: err instanceof Error ? err.message : 'tokens inutilisables' });
   }
 
   const subject = event.connector === 'imap' ? (input.subject || replySubject(event.title)) : undefined;
@@ -159,7 +157,7 @@ apiRouter.get('/events/:id/attachments/:index', isProd ? requireAuth : attachUse
       {
         accountId: event.accountId,
         config: connection.config_json ? JSON.parse(connection.config_json) : {},
-        tokens: connection.encrypted_tokens_json ? JSON.parse(decryptToken(connection.encrypted_tokens_json)) : null,
+        tokens: await freshConnectionTokens(connection),
       },
       {
         filename: att.filename,

@@ -30,6 +30,23 @@ export function App() {
 
   // Menu avatar (mobile).
   const [avatarOpen, setAvatarOpen] = useState(false);
+
+  // Retour d'OAuth Google (?oauth=google&status=...) : affiché une seule fois.
+  const [oauthNotice, setOauthNotice] = useState<string | null>(null);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('oauth') !== 'google') return;
+    const status = params.get('status');
+    const reason = params.get('reason');
+    setOauthNotice(
+      status === 'ok'
+        ? 'Boîte Gmail connectée ✅ Tes mails arrivent dans le fil dans ~1 minute.'
+        : status === 'unconfigured'
+          ? "La connexion Google n'est pas encore configurée sur ce serveur (GOOGLE_CLIENT_ID / SECRET)."
+          : `Connexion Google impossible${reason ? ` (${reason})` : ''}. Réessaie ou utilise un mot de passe d'application.`,
+    );
+    window.history.replaceState({}, '', window.location.pathname);
+  }, []);
   const avatarRef = useRef<HTMLDivElement>(null);
 
   async function refreshUser() {
@@ -170,6 +187,12 @@ export function App() {
 
       {/* Contenu */}
       <main style={{ minWidth: 0 }}>
+        {oauthNotice && (
+          <div className={`notice ${oauthNotice.includes('✅') ? 'success' : 'error'}`} role="status">
+            <span>{oauthNotice}</span>
+            <button className="icon-btn" onClick={() => setOauthNotice(null)} aria-label="Fermer">✕</button>
+          </div>
+        )}
         {tab === 'feed' && (
           <Feed
             view={view}

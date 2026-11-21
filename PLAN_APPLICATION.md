@@ -74,11 +74,13 @@ Objectif : que l'application ressemble à un **produit**, pas à un prototype d'
 
 > **Statut : Telegram (bot) opérationnel** — connexion par jeton BotFather dans Réglages, polling 60 s,
 > réponse depuis le panneau détail. Le jeton reste chiffré en BDD. RSS/Atom opérationnel en lecture.
-> OAuth Gmail/Outlook (3.1/3.2) toujours en attente des identifiants Google/Azure.
+> **OAuth Google implémenté** (`/auth/google/start|callback`, XOAUTH2 IMAP/SMTP, refresh automatique
+> des jetons chiffrés). Il s'active dès que `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` sont renseignés ;
+> sinon l'UI masque le bouton et propose le mot de passe d'application. Outlook (3.2) reste à faire.
 
 | Tâche | Détails |
 |---|---|
-| **3.1 OAuth Gmail** | `oauth_states` (state nonce CSRF), `getAuthUrl()`/`exchangeCode()`, refresh tokens chiffrés, route `/auth/oauth/:connector/callback`. Nécessite un projet Google Cloud + identifiants OAuth. |
+| **3.1 OAuth Gmail** | ✅ Fait (à activer) : state anti-CSRF en cookie httpOnly, `/auth/google/start|callback`, scope `https://mail.google.com/`, tokens (accès + refresh) chiffrés en BDD, refresh automatique avant expiration, IMAP/SMTP en XOAUTH2. Bouton « Se connecter avec Google » dans l'assistant et les réglages (masqué si non configuré). |
 | **3.2 OAuth Outlook** | Même socle, Azure AD app registration. |
 | **3.3 Réponses Telegram/Slack** | ✅ Telegram : lecture par polling `getUpdates` (aucun domaine public requis) + réponse `sendMessage` depuis le fil (bouton « Envoyer par Telegram »), test `getMe` dans Réglages. RSS validé en direct (lecture seule). Reste : `reply()` Slack. |
 | **3.4 Google Calendar** | Connecteur polling API v3 ( OAuth de 3.1). |

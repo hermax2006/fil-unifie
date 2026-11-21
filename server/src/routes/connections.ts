@@ -11,7 +11,8 @@ import { updateConnection, setConnectionTokens, getConnection, createConnection,
 import { validateConnectorConfig } from '../connectors/schemas.js';
 import { getSyncState, getLatestSyncRun } from '../db/repos/sync.repo.js';
 import { listDeliveriesForEndpoint } from '../db/repos/webhook-deliveries.repo.js';
-import { encryptToken, decryptToken } from '../crypto/tokens.js';
+import { encryptToken } from '../crypto/tokens.js';
+import { freshConnectionTokens } from '../oauth/tokens.js';
 
 export const connectionsRouter = Router();
 
@@ -172,8 +173,10 @@ connectionsRouter.put('/connector-connections/:id/tokens', isProd ? requireAuth 
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const row = getConnection(id, accountId);
   if (!row) return res.status(404).json({ error: 'connexion introuvable' });
-  if (row.connector_id === 'imap' && !(typeof tokens?.pass === 'string' && tokens.pass.trim())) {
-    return res.status(400).json({ error: 'mot de passe IMAP requis (tokens.pass)' });
+  const hasPassword = typeof tokens?.pass === 'string' && !!tokens.pass.trim();
+  const hasOAuth = tokens?.authType === 'oauth2' && typeof tokens?.accessToken === 'string';
+  if (row.connector_id === 'imap' && !hasPassword && !hasOAuth) {
+    return res.status(400).json({ error: 'mot de passe IMAP ou jeton OAuth requis (tokens.pass / tokens.accessToken)' });
   }
   const encrypted = encryptToken(JSON.stringify(tokens));
   setConnectionTokens(id, accountId, encrypted);
@@ -223,12 +226,10 @@ connectionsRouter.post('/connector-connections/:id/test', isProd ? requireAuth :
   }
 
   let tokens: Record<string, unknown> | null = null;
-  if (row.encrypted_tokens_json) {
-    try {
-      tokens = JSON.parse(decryptToken(row.encrypted_tokens_json)) as Record<string, unknown>;
-    } catch {
-      return res.status(500).json({ error: 'tokens illisibles (clé de chiffrement ?)' });
-    }
+  try {
+    tokens = await freshConnectionTokens(row);
+  } catch (err) {
+    return res.status(400).json({ error: err instanceof Error ? err.message : 'tokens inutilisables' });
   }
 
   try {

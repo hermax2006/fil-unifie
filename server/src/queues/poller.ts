@@ -1,7 +1,7 @@
 import { registry } from '../connectors/registry.js';
 import { listActiveConnectionsForPolling, type PollingConnectionRow } from '../db/repos/connections.repo.js';
 import { getSyncState, saveSyncState, listSyncStates, startSyncRun, finishSyncRun, purgeSyncRuns } from '../db/repos/sync.repo.js';
-import { decryptToken } from '../crypto/tokens.js';
+import { freshConnectionTokens } from '../oauth/tokens.js';
 import { config } from '../config/index.js';
 import { enqueueEvent } from './index.js';
 
@@ -37,11 +37,14 @@ export async function pollConnection(row: PollingConnectionRow): Promise<number>
 
   const cfg = parseJson<Record<string, unknown>>(row.config_json) ?? {};
   let tokens: Record<string, unknown> | null = null;
+  // Comptes OAuth : refresh automatique avant expiration (1 h chez Google).
+  let tokenError: unknown = null;
   if (row.encrypted_tokens_json) {
     try {
-      tokens = JSON.parse(decryptToken(row.encrypted_tokens_json)) as Record<string, unknown>;
+      tokens = await freshConnectionTokens(row);
     } catch (err) {
-      console.error(`Tokens illisibles pour la connexion ${row.id}`, err);
+      tokenError = err;
+      console.error(`Tokens inutilisables pour la connexion ${row.id}`, err);
     }
   }
 
@@ -55,6 +58,7 @@ export async function pollConnection(row: PollingConnectionRow): Promise<number>
   }
 
   try {
+    if (tokenError) throw tokenError;
     const result = await connector.poll({
       accountId: row.account_id,
       config: cfg,

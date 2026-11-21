@@ -56,6 +56,7 @@ export function Connections({ user }: { user?: User }) {
   const [connError, setConnError] = useState<string | null>(null);
   const [connTestingId, setConnTestingId] = useState<string | null>(null);
   const [connTestResults, setConnTestResults] = useState<Record<string, string>>({});
+  const [oauthAvailable, setOauthAvailable] = useState(false);
 
   async function loadDeliveries(endpointId: string) {
     setDeliveries((prev) => ({ ...prev, [endpointId]: 'loading' }));
@@ -89,6 +90,10 @@ export function Connections({ user }: { user?: User }) {
   useEffect(() => {
     loadEndpoints();
     loadConnections();
+    fetch('/auth/google/available')
+      .then((res) => (res.ok ? res.json() : { available: false }))
+      .then((data) => setOauthAvailable(!!data.available))
+      .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.accountId]);
 
@@ -371,6 +376,14 @@ export function Connections({ user }: { user?: User }) {
         )}
         {connConnectorId === 'imap' && (
           <>
+            {mailProvider === 'gmail' && oauthAvailable && (
+              <div className="oauth-cta">
+                <button className="btn" onClick={() => { window.location.href = '/auth/google/start'; }}>
+                  Se connecter avec Google
+                </button>
+                <span className="hint">Recommandé — aucun mot de passe à créer.</span>
+              </div>
+            )}
             <label>
               Fournisseur de messagerie
               <select value={mailProvider} onChange={(e) => setMailProvider(e.target.value as MailProvider)}>

@@ -2,7 +2,7 @@ import { registry } from '../connectors/registry.js';
 import { getEventForReply } from '../db/events.store.js';
 import { getConnection, findActiveConnection } from '../db/repos/connections.repo.js';
 import { bumpOutboundAttempts, exhaustOutboundAttempts, listRetryableOutbound, markOutboundFailed, markOutboundSent } from '../db/repos/outbound.repo.js';
-import { decryptToken } from '../crypto/tokens.js';
+import { freshConnectionTokens } from '../oauth/tokens.js';
 import { replySubject } from '../connectors/imap.connector.js';
 
 /**
@@ -64,7 +64,7 @@ export async function retryPendingOutbound(): Promise<number> {
       try { config = connection.config_json ? JSON.parse(connection.config_json) : {}; } catch { config = {}; }
       let tokens: Record<string, unknown> | null = null;
       try {
-        tokens = connection.encrypted_tokens_json ? JSON.parse(decryptToken(connection.encrypted_tokens_json)) : null;
+        tokens = await freshConnectionTokens(connection);
       } catch {
         markOutboundFailed(row.id, 'retry impossible : tokens illisibles (clé de chiffrement ?)');
         exhaustOutboundAttempts(row.id);

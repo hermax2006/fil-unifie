@@ -33,13 +33,18 @@ function connectionFrom(ctx: PollContext) {
   // Google affiche le mot de passe d'application avec des espaces (« xxxx xxxx xxxx xxxx ») :
   // on les retire automatiquement pour éviter un échec d'authentification bête.
   const pass = (asString(ctx.tokens?.pass) ?? '').replace(/\s+/g, '');
+  // Compte connecté via OAuth (Google) : XOAUTH2, pas de mot de passe.
+  const accessToken = asString(ctx.tokens?.accessToken);
+  const oauth = ctx.tokens?.authType === 'oauth2' && !!accessToken;
   if (!host) throw new Error('IMAP: config.host requis');
   if (!user) throw new Error('IMAP: config.user requis');
-  if (!pass) throw new Error('IMAP: tokens.pass requis (mot de passe d\'application)');
+  if (!oauth && !pass) throw new Error('IMAP: tokens.pass ou jeton OAuth requis');
   return {
     host,
     user,
     pass,
+    accessToken,
+    oauth,
     port: asNumber(ctx.config.port, 993),
     secure: ctx.config.secure !== false,
   };
@@ -56,13 +61,18 @@ function smtpFrom(ctx: ReplyContext) {
   const host = asString(ctx.config.smtpHost) ?? asString(ctx.config.host);
   const user = asString(ctx.config.smtpUser) ?? asString(ctx.config.user);
   const pass = ((asString(ctx.tokens?.smtpPass) ?? asString(ctx.tokens?.pass)) ?? '').replace(/\s+/g, '');
+  const accessToken = asString(ctx.tokens?.accessToken);
+  const oauth = ctx.tokens?.authType === 'oauth2' && !!accessToken;
   if (!host) throw new Error('SMTP: config.smtpHost ou config.host requis');
   if (!user) throw new Error('SMTP: config.smtpUser ou config.user requis');
-  if (!pass) throw new Error('SMTP: mot de passe requis (tokens.smtpPass ou tokens.pass)');
+  if (!oauth && !pass) throw new Error('SMTP: mot de passe ou jeton OAuth requis');
   const port = asNumber(ctx.config.smtpPort, 465);
   const secure = ctx.config.smtpSecure !== undefined ? !!ctx.config.smtpSecure : port === 465;
   const from = asString(ctx.config.from) ?? asString(ctx.config.smtpFrom) ?? user;
-  return { host, port, secure, user, pass, from };
+  const auth = oauth
+    ? { type: 'OAuth2' as const, user, accessToken: accessToken! }
+    : { user, pass };
+  return { host, port, secure, user, pass, accessToken, oauth, from, auth };
 }
 
 /** Rend les erreurs IMAP lisibles : imapflow renvoie « Command failed » sans le détail du serveur. */
@@ -77,7 +87,8 @@ function makeClient(info: ReturnType<typeof connectionFrom>): ImapFlow {
     host: info.host,
     port: info.port,
     secure: info.secure,
-    auth: { user: info.user, pass: info.pass },
+    // XOAUTH2 (Google) ou mot de passe/mot de passe d'application.
+    auth: info.oauth ? { user: info.user, accessToken: info.accessToken! } : { user: info.user, pass: info.pass },
     logger: false,
     // Timeouts courts : sans eux, une connexion qui traîne bloque la requête
     // HTTP jusqu'à la coupure du proxy/navigateur (réponse vide côté client).
@@ -144,7 +155,7 @@ export class ImapConnector extends BaseConnector {
       host: smtp.host,
       port: smtp.port,
       secure: smtp.secure,
-      auth: { user: smtp.user, pass: smtp.pass },
+      auth: smtp.auth as any,
       connectionTimeout: 15000,
       greetingTimeout: 15000,
       socketTimeout: 30000,
