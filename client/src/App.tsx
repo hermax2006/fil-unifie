@@ -41,9 +41,13 @@ export function App() {
     setOauthNotice(
       status === 'ok'
         ? 'Boîte Gmail connectée ✅ Tes mails arrivent dans le fil dans ~1 minute.'
-        : status === 'unconfigured'
-          ? "La connexion Google n'est pas encore configurée sur ce serveur (GOOGLE_CLIENT_ID / SECRET)."
-          : `Connexion Google impossible${reason ? ` (${reason})` : ''}. Réessaie ou utilise un mot de passe d'application.`,
+        : status === 'login'
+          ? 'Connecte-toi d’abord à Fil unifié, puis relance « Se connecter avec Google ». Ouvre l’app via http://localhost:5173 (pas 127.0.0.1).'
+          : reason === 'scope_mail_absent'
+            ? 'Google n’a accordé que l’accès de base (email) : ajoute le scope https://mail.google.com/ dans Google Auth Platform → Data Access, puis reconnecte.'
+          : status === 'unconfigured'
+            ? "La connexion Google n'est pas encore configurée sur ce serveur (GOOGLE_CLIENT_ID / SECRET)."
+            : `Connexion Google impossible${reason ? ` (${reason})` : ''}. Réessaie ou utilise un mot de passe d'application.`,
     );
     window.history.replaceState({}, '', window.location.pathname);
   }, []);

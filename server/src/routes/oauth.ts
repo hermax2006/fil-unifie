@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
-import { requireAuth, type AuthRequest } from '../auth/middleware.js';
+import { attachUser, type AuthRequest } from '../auth/middleware.js';
 import { findOrCreateAccountForUser } from '../db/repos/accounts.repo.js';
 import {
   listConnections,
@@ -38,7 +38,9 @@ oauthRouter.get('/google/available', (_req, res) => {
   return res.json({ available: googleOAuthConfigured() });
 });
 
-oauthRouter.get('/google/start', requireAuth, (req: AuthRequest, res) => {
+oauthRouter.get('/google/start', attachUser, (req: AuthRequest, res) => {
+  // Navigation navigateur : on renvoie vers l'app plutôt qu'un JSON 401.
+  if (!req.userId) return backToApp(res, { oauth: 'google', status: 'login' });
   if (!googleOAuthConfigured()) {
     return backToApp(res, { oauth: 'google', status: 'unconfigured' });
   }
@@ -53,12 +55,14 @@ oauthRouter.get('/google/start', requireAuth, (req: AuthRequest, res) => {
   return res.redirect(buildGoogleAuthUrl(state, req.user?.email));
 });
 
-oauthRouter.get('/google/callback', requireAuth, async (req: AuthRequest, res) => {
+oauthRouter.get('/google/callback', attachUser, async (req: AuthRequest, res) => {
   const fail = (reason: string) => backToApp(res, { oauth: 'google', status: 'error', reason });
   const { code, state, error } = req.query as Record<string, string | undefined>;
   const cookieState = req.cookies?.[STATE_COOKIE];
   res.clearCookie(STATE_COOKIE, { path: '/auth/google' });
 
+  // Cookie de session absent (ex. app ouverte via 127.0.0.1 mais callback sur localhost).
+  if (!req.userId) return backToApp(res, { oauth: 'google', status: 'login' });
   if (error) return fail(error);
   if (!stateMatches(state, cookieState)) return fail('state');
   if (!code) return fail('missing_code');
@@ -68,6 +72,10 @@ oauthRouter.get('/google/callback', requireAuth, async (req: AuthRequest, res) =
     const email = emailFromIdToken(tokens.id_token);
     if (!email) return fail('email_absent');
     if (!tokens.refresh_token) return fail('refresh_token_absent');
+    // Google ne délivre que les scopes déclarés dans « Data Access » : sans
+    // https://mail.google.com/, IMAP/SMTP en XOAUTH2 échouent (invalid credentials).
+    const granted = String(tokens.scope ?? '').split(/\s+/);
+    if (!granted.includes('https://mail.google.com/')) return fail('scope_mail_absent');
 
     const account = findOrCreateAccountForUser(req.userId!);
     const cfg = {
