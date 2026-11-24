@@ -25,6 +25,15 @@ const APPS: CatalogApp[] = [
     status: 'available',
   },
   {
+    id: 'outlook',
+    name: 'Outlook / Microsoft 365',
+    category: 'Mail',
+    price: 'Gratuit',
+    desc: 'Connecte ta boîte Microsoft en un clic (OAuth) et réponds depuis le fil.',
+    connector: 'imap',
+    status: 'available',
+  },
+  {
     id: 'imap',
     name: 'IMAP / SMTP',
     category: 'Mail',
@@ -65,9 +74,9 @@ const APPS: CatalogApp[] = [
     name: 'Google Calendar',
     category: 'Agenda',
     price: 'Gratuit',
-    desc: 'Rendez-vous et rappels dans le fil.',
-    connector: '',
-    status: 'soon',
+    desc: 'Rendez-vous et rappels dans le fil (lecture seule).',
+    connector: 'gcal',
+    status: 'available',
   },
   {
     id: 'whatsapp',

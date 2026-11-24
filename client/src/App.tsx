@@ -18,6 +18,7 @@ export function App() {
   const [tab, setTab] = useState<Tab>('feed');
   const [user, setUser] = useState<User>(null);
   const [onboarding, setOnboarding] = useState<'loading' | 'show' | 'hide'>('loading');
+  const [settingsConnector, setSettingsConnector] = useState<string | null>(null);
 
   // Vues du fil + filtre par app (sidebar / menu radial) + sélection (panneau détail).
   const [view, setView] = useState<FeedView>('all');
@@ -35,20 +36,34 @@ export function App() {
   const [oauthNotice, setOauthNotice] = useState<string | null>(null);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get('oauth') !== 'google') return;
+    const provider = params.get('oauth');
+    if (!provider) return;
     const status = params.get('status');
     const reason = params.get('reason');
-    setOauthNotice(
-      status === 'ok'
-        ? 'Boîte Gmail connectée ✅ Tes mails arrivent dans le fil dans ~1 minute.'
-        : status === 'login'
-          ? 'Connecte-toi d’abord à Fil unifié, puis relance « Se connecter avec Google ». Ouvre l’app via http://localhost:5173 (pas 127.0.0.1).'
-          : reason === 'scope_mail_absent'
-            ? 'Google n’a accordé que l’accès de base (email) : ajoute le scope https://mail.google.com/ dans Google Auth Platform → Data Access, puis reconnecte.'
-          : status === 'unconfigured'
-            ? "La connexion Google n'est pas encore configurée sur ce serveur (GOOGLE_CLIENT_ID / SECRET)."
-            : `Connexion Google impossible${reason ? ` (${reason})` : ''}. Réessaie ou utilise un mot de passe d'application.`,
-    );
+    const names: Record<string, string> = {
+      google: 'Gmail',
+      microsoft: 'Outlook',
+      slack: 'Slack',
+      calendar: 'Google Agenda',
+    };
+    const name = names[provider] ?? provider;
+    let message: string;
+    if (status === 'ok') {
+      message = provider === 'slack'
+        ? 'Slack connecté ✅ Configure les Event Subscriptions vers ton URL webhook pour recevoir les messages.'
+        : `${name} connecté ✅ Les nouveaux éléments arrivent dans le fil dans ~1 minute.`;
+    } else if (status === 'login') {
+      message = 'Connecte-toi d’abord à Fil unifié, puis relance la connexion. Ouvre l’app via http://localhost:5173 (pas 127.0.0.1).';
+    } else if (reason === 'scope_mail_absent') {
+      message = 'Le fournisseur n’a pas accordé l’accès mail : ajoute le scope IMAP/SMTP (Gmail : https://mail.google.com/ ; Microsoft : IMAP.AccessAsUser.All) puis reconnecte.';
+    } else if (reason === 'scope_calendar_absent') {
+      message = 'Google n’a pas accordé l’accès Agenda : ajoute https://www.googleapis.com/auth/calendar.readonly dans Data Access, puis reconnecte.';
+    } else if (status === 'unconfigured') {
+      message = `La connexion ${name} n'est pas configurée sur ce serveur.`;
+    } else {
+      message = `Connexion ${name} impossible${reason ? ` (${reason})` : ''}.`;
+    }
+    setOauthNotice(message);
     window.history.replaceState({}, '', window.location.pathname);
   }, []);
   const avatarRef = useRef<HTMLDivElement>(null);
@@ -118,7 +133,9 @@ export function App() {
       setOnboarding('show');
       return;
     }
+    setSettingsConnector(app.connector);
     setTab('settings');
+    window.scrollTo(0, 0);
   }
 
   const goFeed = (nextView?: FeedView, connector?: string) => {
@@ -234,7 +251,7 @@ export function App() {
         )}
         {tab === 'settings' && (
           <section className="content" aria-label="Réglages des connexions">
-            <Connections user={user} />
+            <Connections user={user} initialConnector={settingsConnector} />
           </section>
         )}
       </main>

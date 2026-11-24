@@ -72,19 +72,18 @@ Objectif : que l'application ressemble à un **produit**, pas à un prototype d'
 
 ## Phase 3 — Connecteurs réels
 
-> **Statut : Telegram (bot) opérationnel** — connexion par jeton BotFather dans Réglages, polling 60 s,
-> réponse depuis le panneau détail. Le jeton reste chiffré en BDD. RSS/Atom opérationnel en lecture.
-> **OAuth Google implémenté** (`/auth/google/start|callback`, XOAUTH2 IMAP/SMTP, refresh automatique
-> des jetons chiffrés). Il s'active dès que `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` sont renseignés ;
-> sinon l'UI masque le bouton et propose le mot de passe d'application. Outlook (3.2) reste à faire.
+> **Statut : OAuth Google (Gmail + Agenda), Microsoft (Outlook) et Slack implémentés**, activés dès que
+> les identifiants correspondants sont renseignés (sinon l'UI masque les boutons et propose le mot de passe
+> d'application / le webhook). Telegram et RSS opérationnels. Réponses depuis le fil : Gmail, Outlook,
+> Telegram, Slack. Validation live restante : Slack/Microsoft/Agenda (identifiants à créer côté fournisseurs).
 
 | Tâche | Détails |
 |---|---|
 | **3.1 OAuth Gmail** | ✅ Fait (à activer) : state anti-CSRF en cookie httpOnly, `/auth/google/start|callback`, scope `https://mail.google.com/`, tokens (accès + refresh) chiffrés en BDD, refresh automatique avant expiration, IMAP/SMTP en XOAUTH2. Bouton « Se connecter avec Google » dans l'assistant et les réglages (masqué si non configuré). |
-| **3.2 OAuth Outlook** | Même socle, Azure AD app registration. |
-| **3.3 Réponses Telegram/Slack** | ✅ Telegram : lecture par polling `getUpdates` (aucun domaine public requis) + réponse `sendMessage` depuis le fil (bouton « Envoyer par Telegram »), test `getMe` dans Réglages. RSS validé en direct (lecture seule). Reste : `reply()` Slack. |
-| **3.4 Google Calendar** | Connecteur polling API v3 ( OAuth de 3.1). |
-| **3.5 Catalogue d'apps** | Page « Applications » : cartes par connecteur avec statut (connecté/pas connecté), + `app_wishes` (liste de souhaits votables). |
+| **3.2 OAuth Outlook** | ✅ Implémenté (`/auth/microsoft/*`, XOAUTH2 `outlook.office365.com` + `smtp.office365.com:587`, refresh tokens provider-aware). À activer avec `MICROSOFT_CLIENT_ID` / `SECRET` (Azure AD, redirect `/auth/microsoft/callback`). |
+| **3.3 Réponses Telegram/Slack** | ✅ Telegram : polling `getUpdates` + réponse `sendMessage`, test `getMe`. ✅ Slack : OAuth v2 (`/auth/slack/*`), `chat.postMessage` dans le fil, signature `SLACK_SIGNING_SECRET`. RSS validé en direct (lecture seule). |
+| **3.4 Google Calendar** | ✅ Connecteur `gcal` (polling API v3, `updatedMin`, lecture seule, scope `calendar.readonly`) + bouton « Connecter Google Agenda ». |
+| **3.5 Catalogue d'apps** | ✅ Page « Applications » avec cartes (Gmail, Outlook, IMAP, Slack, Telegram, RSS, webhook, Agenda, WhatsApp bientôt) ; « Brancher » ouvre directement le bon formulaire. `app_wishes` (souhaits votables) à ajouter. |
 
 **Critère de validation :** on ajoute Gmail par OAuth (aucun mot de passe d'application à saisir), on répond à un message Telegram depuis le fil.
 

@@ -27,7 +27,9 @@ type MailProvider = 'gmail' | 'outlook' | 'other';
  * - Secret chiffré côté serveur, affiché UNE SEULE FOIS
  * - Liste + révocation des endpoints existants
  */
-export function Connections({ user }: { user?: User }) {
+const SELECTABLE_CONNECTORS = new Set(['imap', 'telegram', 'rss', 'slack', 'webhook']);
+
+export function Connections({ user, initialConnector }: { user?: User; initialConnector?: string | null }) {
   const [accountId, setAccountId] = useState('mon-compte');
   const [connectorId, setConnectorId] = useState('webhook');
   const [loading, setLoading] = useState(false);
@@ -56,7 +58,9 @@ export function Connections({ user }: { user?: User }) {
   const [connError, setConnError] = useState<string | null>(null);
   const [connTestingId, setConnTestingId] = useState<string | null>(null);
   const [connTestResults, setConnTestResults] = useState<Record<string, string>>({});
-  const [oauthAvailable, setOauthAvailable] = useState(false);
+  const [oauthProviders, setOauthProviders] = useState({ google: false, microsoft: false, slack: false });
+  const [slackEndpoint, setSlackEndpoint] = useState<{ url: string; secret: string } | null>(null);
+  const [slackLoading, setSlackLoading] = useState(false);
 
   async function loadDeliveries(endpointId: string) {
     setDeliveries((prev) => ({ ...prev, [endpointId]: 'loading' }));
@@ -88,12 +92,25 @@ export function Connections({ user }: { user?: User }) {
   }
 
   useEffect(() => {
+    if (initialConnector && SELECTABLE_CONNECTORS.has(initialConnector)) {
+      setConnConnectorId(initialConnector);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialConnector]);
+
+  useEffect(() => {
     loadEndpoints();
     loadConnections();
-    fetch('/auth/google/available')
-      .then((res) => (res.ok ? res.json() : { available: false }))
-      .then((data) => setOauthAvailable(!!data.available))
-      .catch(() => {});
+    const availability = (path: string) =>
+      fetch(path)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => !!data?.available)
+        .catch(() => false);
+    Promise.all([
+      availability('/auth/google/available'),
+      availability('/auth/microsoft/available'),
+      availability('/auth/slack/available'),
+    ]).then(([google, microsoft, slack]) => setOauthProviders({ google, microsoft, slack }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.accountId]);
 
@@ -234,7 +251,7 @@ export function Connections({ user }: { user?: User }) {
     }
   }
 
-  async function generate() {
+  async function generate(targetConnector: string = connectorId) {
     setLoading(true);
     setError(null);
     setResult(null);
@@ -244,7 +261,7 @@ export function Connections({ user }: { user?: User }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ accountId, connectorId }),
+        body: JSON.stringify({ accountId, connectorId: targetConnector }),
       });
       const data = await readJson(res);
       if (!res.ok) {
@@ -257,6 +274,27 @@ export function Connections({ user }: { user?: User }) {
       setError(e.message);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function createSlackWebhook() {
+    setSlackLoading(true);
+    setConnError(null);
+    try {
+      const res = await fetch('/api/connections/webhook/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ accountId, connectorId: 'slack' }),
+      });
+      const data = await readJson(res);
+      if (!res.ok) throw new Error(data.error || `Erreur ${res.status}`);
+      setSlackEndpoint({ url: data.url, secret: data.secret });
+      loadEndpoints();
+    } catch (e: any) {
+      setConnError(e.message);
+    } finally {
+      setSlackLoading(false);
     }
   }
 
@@ -376,11 +414,18 @@ export function Connections({ user }: { user?: User }) {
         )}
         {connConnectorId === 'imap' && (
           <>
-            {mailProvider === 'gmail' && oauthAvailable && (
+            {(oauthProviders.google || oauthProviders.microsoft) && (
               <div className="oauth-cta">
-                <button className="btn" onClick={() => { window.location.href = '/auth/google/start'; }}>
-                  Se connecter avec Google
-                </button>
+                {oauthProviders.google && (
+                  <button className="btn" onClick={() => { window.location.href = '/auth/google/start'; }}>
+                    Se connecter avec Google
+                  </button>
+                )}
+                {oauthProviders.microsoft && (
+                  <button className="btn" onClick={() => { window.location.href = '/auth/microsoft/start'; }}>
+                    Se connecter avec Microsoft
+                  </button>
+                )}
                 <span className="hint">Recommandé — aucun mot de passe à créer.</span>
               </div>
             )}
@@ -468,6 +513,43 @@ export function Connections({ user }: { user?: User }) {
             </details>
           </>
         )}
+        {connConnectorId === 'slack' && (
+          <>
+            <div className="oauth-cta">
+              {oauthProviders.slack ? (
+                <button className="btn" onClick={() => { window.location.href = '/auth/slack/start'; }}>
+                  Ajouter à Slack
+                </button>
+              ) : (
+                <span className="hint">OAuth Slack non configuré sur ce serveur (SLACK_CLIENT_ID / SECRET).</span>
+              )}
+              <span className="hint">Installe l'app sur ton espace de travail pour autoriser la lecture et les réponses.</span>
+            </div>
+            <p className="hint">
+              1. Crée l'URL de réception ci-dessous. 2. Dans api.slack.com → Event Subscriptions →
+              Request URL, colle-la. 3. Abonne les événements bot <code>message.channels</code> et
+              <code>app_mention</code>. 4. Ajoute le Signing Secret dans <code>SLACK_SIGNING_SECRET</code>.
+            </p>
+            <button className="btn" onClick={createSlackWebhook} disabled={slackLoading}>
+              {slackLoading ? 'Création...' : "Créer l'URL de réception Slack"}
+            </button>
+            {slackEndpoint && (
+              <div className="result">
+                <div className="result-row">
+                  <span className="label">Request URL</span>
+                  <code className="value">{slackEndpoint.url}</code>
+                  <button className="btn small" onClick={() => copy(slackEndpoint.url, 'url')}>
+                    {copied === 'url' ? 'Copié !' : 'Copier'}
+                  </button>
+                </div>
+                <p className="warning">
+                  Signing secret (affiché une seule fois) : <code>{slackEndpoint.secret}</code> — à mettre
+                  dans <code>SLACK_SIGNING_SECRET</code> côté serveur.
+                </p>
+              </div>
+            )}
+          </>
+        )}
         {connConnectorId === 'telegram' && (
           <label>
             Jeton du bot
@@ -484,9 +566,11 @@ export function Connections({ user }: { user?: User }) {
             </span>
           </label>
         )}
-        <button className="btn" onClick={saveConnection} disabled={connSaving}>
-          {connSaving ? 'Enregistrement...' : "Ajouter l'application"}
-        </button>
+        {connConnectorId !== 'slack' && (
+          <button className="btn" onClick={saveConnection} disabled={connSaving}>
+            {connSaving ? 'Enregistrement...' : "Ajouter l'application"}
+          </button>
+        )}
       </div>
 
       {connError && <p className="error">{connError}</p>}
@@ -539,6 +623,15 @@ export function Connections({ user }: { user?: User }) {
         </ul>
       )}
 
+      {oauthProviders.google && !connections.some((c) => c.connectorId === 'gcal') && (
+        <div className="oauth-cta">
+          <button className="btn" onClick={() => { window.location.href = '/auth/google/calendar/start'; }}>
+            Connecter Google Agenda
+          </button>
+          <span className="hint">Tes rendez-vous apparaissent dans le fil (lecture seule).</span>
+        </div>
+      )}
+
       <details className="details advanced">
         <summary>Avancé — webhooks (développeurs)</summary>
 
@@ -563,7 +656,7 @@ export function Connections({ user }: { user?: User }) {
               <option value="slack">slack</option>
             </select>
           </label>
-          <button className="btn" onClick={generate} disabled={loading}>
+          <button className="btn" onClick={() => generate()} disabled={loading}>
             {loading ? 'Génération...' : 'Générer une URL webhook'}
           </button>
         </div>

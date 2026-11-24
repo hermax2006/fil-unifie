@@ -8,6 +8,8 @@ import { config } from '../config/index.js';
 const AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 export const GOOGLE_SCOPE = 'openid email https://mail.google.com/';
+export const GOOGLE_CALENDAR_SCOPE =
+  'openid email https://www.googleapis.com/auth/calendar.readonly';
 
 export interface GoogleTokens {
   access_token: string;
@@ -27,12 +29,12 @@ export function googleRedirectUri(): string {
   return `${config.publicBaseUrl}/auth/google/callback`;
 }
 
-export function buildGoogleAuthUrl(state: string, loginHint?: string): string {
+export function buildGoogleAuthUrl(state: string, loginHint?: string, scope: string = GOOGLE_SCOPE): string {
   const params = new URLSearchParams({
     client_id: process.env.GOOGLE_CLIENT_ID ?? '',
     redirect_uri: googleRedirectUri(),
     response_type: 'code',
-    scope: GOOGLE_SCOPE,
+    scope,
     access_type: 'offline',
     // Sans consentement explicite, Google ne renvoie le refresh token qu'une fois.
     prompt: 'consent',

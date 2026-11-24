@@ -8,6 +8,7 @@ export const APP_LABEL: Record<string, string> = {
   rss: 'RSS',
   telegram: 'Telegram',
   slack: 'Slack',
+  gcal: 'Agenda',
   webhook: 'Webhook',
   generic: 'Webhook',
 };
@@ -17,7 +18,7 @@ export function appLabel(connector: string) {
 }
 
 /** Connecteurs capables d'envoyer une réponse depuis le fil. */
-export const REPLYABLE = new Set(['imap', 'telegram']);
+export const REPLYABLE = new Set(['imap', 'telegram', 'slack']);
 
 function fmtTime(iso: string) {
   const d = new Date(iso);

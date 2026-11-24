@@ -35,14 +35,17 @@ export function Onboarding({ user, onClose, onFinish }: {
   const [smtpSecure, setSmtpSecure] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [oauthAvailable, setOauthAvailable] = useState(false);
+  const [oauth, setOauth] = useState({ google: false, microsoft: false });
 
-  // Le bouton « Se connecter avec Google » n'apparaît que si le serveur a les identifiants.
+  // Les boutons OAuth n'apparaissent que si le serveur a les identifiants.
   useEffect(() => {
-    fetch('/auth/google/available')
-      .then((res) => (res.ok ? res.json() : { available: false }))
-      .then((data) => setOauthAvailable(!!data.available))
-      .catch(() => {});
+    const availability = (path: string) =>
+      fetch(path)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => !!data?.available)
+        .catch(() => false);
+    Promise.all([availability('/auth/google/available'), availability('/auth/microsoft/available')])
+      .then(([google, microsoft]) => setOauth({ google, microsoft }));
   }, []);
 
   async function createMailbox() {
@@ -126,14 +129,19 @@ export function Onboarding({ user, onClose, onFinish }: {
         {step === 'mail' && (
           <>
             <h2 className="detail-title">Ajouter une boîte mail</h2>
-            {provider === 'gmail' && oauthAvailable && (
+            {(oauth.google || oauth.microsoft) && (
               <div className="oauth-cta">
-                <button className="btn primary" onClick={() => { window.location.href = '/auth/google/start'; }}>
-                  Se connecter avec Google
-                </button>
-                <span className="hint">
-                  Recommandé : tu choisis ton compte Google, aucun mot de passe à créer.
-                </span>
+                {oauth.google && (
+                  <button className="btn primary" onClick={() => { window.location.href = '/auth/google/start'; }}>
+                    Se connecter avec Google
+                  </button>
+                )}
+                {oauth.microsoft && (
+                  <button className="btn" onClick={() => { window.location.href = '/auth/microsoft/start'; }}>
+                    Se connecter avec Microsoft
+                  </button>
+                )}
+                <span className="hint">Recommandé : aucun mot de passe à créer.</span>
               </div>
             )}
             <div className="form">
